@@ -6,6 +6,7 @@ import * as W from './wallet.js';
 import * as desk from './desk.js';
 import * as sections from './sections.js';
 import * as T from './tools.js';
+import * as TR from './trench.js';
 import { createMusic } from './music.js?v=1';
 
 const html = document.documentElement;
@@ -58,22 +59,29 @@ if (CONFIG.ca) {
 
 // ---------------------------------------------------------------- wallet
 const panel = (title, body, bind) => T.panel(title, body, bind);
-export function openWallets() {
+export function openWallets(focus) {
+  const brand = d => `https://www.google.com/s2/favicons?domain=${d}&sz=64`;
+  const solSec = () => `<div class="m-sec"><span>Solana wallet · trade the trenches</span>
+      ${W.sol.address ? `<button class="wbtn on" data-a="sol-off" type="button">${W.sol.w && W.sol.w.icon ? `<img src="${esc(W.sol.w.icon)}" alt="">` : ''}<b>${esc(W.sol.w ? W.sol.w.name : 'Solana wallet')}</b><em>${short(W.sol.address)} · disconnect</em></button>`
+        : W.sol.list.length ? W.sol.list.map(w => `<button class="wbtn" data-sol="${esc(w.name)}" type="button">${w.icon ? `<img src="${esc(w.icon)}" alt="">` : ''}<b>${esc(w.name)}</b><em>connect</em></button>`).join('')
+        : [['phantom.com', 'Phantom', 'https://phantom.com/download'], ['solflare.com', 'Solflare', 'https://solflare.com/download'], ['backpack.app', 'Backpack', 'https://backpack.app/download']].map(([d, n, u]) => `<a class="wbtn" href="${u}" target="_blank" rel="noopener"><img src="${brand(d)}" alt=""><b>${n}</b><em>install ↗</em></a>`).join('')}</div>`;
   const draw = () => {
     const ew = W.evm.list.length ? W.evm.list : (W.legacyEvm() ? [{ info: { uuid: 'legacy', name: 'Browser wallet', icon: '' } }] : []), ag = W.agent();
-    const brand = d => `https://www.google.com/s2/favicons?domain=${d}&sz=64`;
-    panel('Connect', `<div class="m-sec"><span>EVM wallet · your Hyperliquid account</span>
+    const evmSec = `<div class="m-sec"><span>EVM wallet · your Hyperliquid account</span>
       ${W.evm.address ? `<button class="wbtn on" data-a="off" type="button">${W.evm.icon ? `<img src="${esc(W.evm.icon)}" alt="">` : ''}<b>${esc(W.evm.name)}</b><em>${short(W.evm.address)} · disconnect</em></button>
         ${ag ? `<button class="wbtn on" data-a="agent-off" type="button"><b>Session key</b><em>${short(ag.address)} · forget</em></button>` : `<button class="wbtn" data-a="agent" type="button"><b>Approve session key</b><em>one signature</em></button>`}`
         : ew.length ? ew.map(d => `<button class="wbtn" data-evm="${esc(d.info.uuid)}" type="button">${d.info.icon ? `<img src="${esc(d.info.icon)}" alt="">` : ''}<b>${esc(d.info.name)}</b><em>connect</em></button>`).join('')
         : [['phantom.com', 'Phantom', 'https://phantom.com/download'], ['metamask.io', 'MetaMask', 'https://metamask.io/download'], ['rabby.io', 'Rabby', 'https://rabby.io']].map(([d, n, u]) => `<a class="wbtn" href="${u}" target="_blank" rel="noopener"><img src="${brand(d)}" alt=""><b>${n}</b><em>install ↗</em></a>`).join('')}
-      <a class="wbtn" href="https://app.hyperliquid.xyz/trade" target="_blank" rel="noopener"><img src="${brand('hyperliquid.xyz')}" alt=""><b>Deposit USDC on Hyperliquid</b><em>↗</em></a></div>
-      <p class="m-note">The session key can place and cancel orders on your Hyperliquid account. It can never withdraw. It lives in this browser only.</p>`, b => {
+      <a class="wbtn" href="https://app.hyperliquid.xyz/trade" target="_blank" rel="noopener"><img src="${brand('hyperliquid.xyz')}" alt=""><b>Deposit USDC on Hyperliquid</b><em>↗</em></a></div>`;
+    const note = `<p class="m-note">The session key can place and cancel orders on your Hyperliquid account. It can never withdraw. It lives in this browser only. Trenches swaps are built by Jupiter for your Solana address and signed in your wallet; CHAD never holds your keys or coins.</p>`;
+    panel('Connect', (focus === 'sol' ? solSec() + evmSec : evmSec + solSec()) + note, b => {
       b.onclick = async e => {
         const t = e.target.closest('button'); if (!t) return;
         try {
           if (t.dataset.evm) { t.querySelector('em').textContent = 'check your wallet'; await W.connectEvm(t.dataset.evm); toast('Wallet connected', 'ok', 3000); }
+          else if (t.dataset.sol) { t.querySelector('em').textContent = 'check your wallet'; await W.connectSol(t.dataset.sol); toast('Solana wallet connected', 'ok', 3000); if (focus === 'sol') { $('#modal').hidden = true; return; } }
           else if (t.dataset.a === 'off') W.disconnectEvm();
+          else if (t.dataset.a === 'sol-off') await W.disconnectSol();
           else if (t.dataset.a === 'agent') { t.querySelector('em').textContent = 'sign in your wallet'; await W.approveAgent(); toast('Session key approved. Copies now sign without popups.', 'ok'); }
           else if (t.dataset.a === 'agent-off') W.forgetAgent();
         } catch (err) { toast(esc(err.message || String(err)), 'err'); }
@@ -86,9 +94,9 @@ export function openWallets() {
 window.__wallets = openWallets;
 $('#mClose').onclick = () => { $('#modal').hidden = true; };
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') e.currentTarget.hidden = true; });
-$('#connectBtn').onclick = () => openWallets();
-const navW = () => { const b = $('#connectBtn'); b.classList.toggle('on', !!W.evm.address); b.querySelector('span').textContent = W.evm.address ? short(W.evm.address) : 'Connect'; };
-on('evm', navW);
+const navW = () => { const b = $('#connectBtn'), a = W.evm.address || W.sol.address; b.classList.toggle('on', !!a); b.querySelector('span').textContent = a ? short(a) : 'Connect'; };
+on('evm', navW); on('sol', navW);
+$('#connectBtn').onclick = () => openWallets(TR.isOpen() ? 'sol' : undefined);
 setTimeout(() => {   // quiet reconnect of the wallet this browser used before
   const e = store.get('chad:evm'); if (!e) return;
   const d = W.evm.list.find(x => x.info.uuid === e), p = d ? d.provider : W.legacyEvm();
@@ -97,9 +105,10 @@ setTimeout(() => {   // quiet reconnect of the wallet this browser used before
 
 // ---------------------------------------------------------------- tools: search, markets, compare, share, alerts, your account, keys, settings, replay, sound
 const tools = {
+  trench: () => TR.toggle(), heat: () => T.heatmap(), whales: () => T.whales(), funding: () => T.funding(),
   find: () => T.palette(), markets: () => T.markets(), compare: () => T.compare(), share: () => T.share(), alerts: () => T.alerts(), csv: () => T.exportCsv(), liqs: () => T.liqs(), watch: () => T.watch(), sizer: () => T.sizer(), roll: () => T.roll('chads'), tape: () => T.tape(), focus: () => T.focus(),
-  mine: () => scrollTo('#mine', { offset: -80 }),
-  keys: () => panel('Keyboard shortcuts', `<div class="keys">${[['⌘K', 'Search everything'], ['/', 'Search everything'], ['M', 'Markets'], ['H', 'Compare traders'], ['S', 'Share card'], ['A', 'Alerts'], ['L', 'Liquidation watch'], ['W', 'Watchlist'], ['Z', 'Position sizer'], ['R', 'Random chad'], ['P', 'Chad music'], ['E', 'Export the board'], ['T', 'Tail mode'], ['F', 'Fade mode'], ['C', 'Chads board'], ['V', 'Virgins board'], ['?', 'This list'], ['Esc', 'Close any panel']].map(([k, d]) => `<div><span class="kbd">${esc(k)}</span><b>${esc(d)}</b></div>`).join('')}</div>`),
+  mine: () => { TR.close(); scrollTo('#mine', { offset: -80 }); },
+  keys: () => panel('Keyboard shortcuts', `<div class="keys">${[['⌘K', 'Search everything'], ['/', 'Search everything'], ['N', 'Trenches'], ['G', 'Heatmap'], ['B', 'Whale trades'], ['U', 'Funding arb'], ['M', 'Markets'], ['H', 'Compare traders'], ['S', 'Share card'], ['A', 'Alerts'], ['L', 'Liquidation watch'], ['W', 'Watchlist'], ['Z', 'Position sizer'], ['R', 'Random chad'], ['P', 'Chad music'], ['E', 'Export the board'], ['T', 'Tail mode'], ['F', 'Fade mode'], ['C', 'Chads board'], ['V', 'Virgins board'], ['?', 'This list'], ['Esc', 'Close any panel']].map(([k, d]) => `<div><span class="kbd">${esc(k)}</span><b>${esc(d)}</b></div>`).join('')}</div>`),
   settings: () => {
     const s = W.settings();
     const seg = (k, opts) => `<div class="seg seg-sm set-seg" data-k="${k}">${opts.map(([v, l]) => `<button type="button" data-v="${v}" class="${String(s[k]) === String(v) ? 'on' : ''}">${l}</button>`).join('')}</div>`;
@@ -121,7 +130,8 @@ const tools = {
   sound: () => { const v = !soundOn(); store.set('chad:sound', v); html.classList.toggle('muted', !v); if (!v) { MUS.stop(); setTimeout(musicBtn, 60); } toast(v ? 'Sound on for the intro.' : 'Sound off.', '', 2200); },
 };
 $('#navMine').onclick = tools.mine; $('#navSet').onclick = tools.settings; $('#navMusic').onclick = tools.music;
-T.init({ mine: tools.mine, settings: tools.settings, keys: tools.keys, replay: tools.replay, sound: tools.sound, music: tools.music });
+T.init({ mine: tools.mine, settings: tools.settings, keys: tools.keys, replay: tools.replay, sound: tools.sound, music: tools.music, trench: TR.open });
+TR.init();
 addEventListener('keydown', e => {
   if (e.key === 'Escape') { $('#modal').hidden = true; return; }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); T.palette(); return; }
@@ -130,6 +140,7 @@ addEventListener('keydown', e => {
   if (e.key === '/') { e.preventDefault(); tools.find(); }
   else if (e.key === '?') tools.keys();
   else if (k === 'p') tools.music();
+  else if (k === 'n') TR.toggle();
   else if (T.keys[k] && k !== 'k' && $('#pal').hidden) T.keys[k]();
   else if (k === 't' && window.__chad) window.__chad.mode('tail');
   else if (k === 'f' && window.__chad) window.__chad.mode('fade');

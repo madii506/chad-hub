@@ -1,15 +1,18 @@
-// CHAD · live data straight from Hyperliquid: the leaderboard, every trader's positions, fills and equity, live mids and fills
+// CHAD · live data straight from the source: Hyperliquid (the leaderboard, every trader's positions, fills, live mids and trades),
+// Jupiter (pump.fun's live pulse, tokens, holdings and swaps) and GeckoTerminal (curve and pool candles, trades).
 import { emit } from './core.js';
 
 export const HL = 'https://api.hyperliquid.xyz';
 const LB = 'https://stats-data.hyperliquid.xyz/Mainnet/leaderboard';
+export const JUP = 'https://lite-api.jup.ag', JDP = 'https://datapi.jup.ag', GT = 'https://api.geckoterminal.com/api/v2/networks/solana';
+export const SOL_MINT = 'So11111111111111111111111111111111111111112';
 
 async function j(url, opt = {}, ms = 12000) {
   const c = new AbortController(); const t = setTimeout(() => c.abort(), ms);
   try {
     const r = await fetch(url, { ...opt, signal: c.signal });
     const txt = await r.text(); let d; try { d = JSON.parse(txt); } catch { d = txt; }
-    if (!r.ok) { const e = new Error((d && (d.error || d.message)) || ('HTTP ' + r.status)); e.status = r.status; throw e; }
+    if (!r.ok) { const e = new Error((d && (d.error || d.message || d.errorMessage)) || ('HTTP ' + r.status)); e.status = r.status; e.body = d; throw e; }
     return d;
   } finally { clearTimeout(t); }
 }
@@ -31,17 +34,18 @@ export async function loadPerps() {
 
 // ---------------------------------------------------------------- one websocket: mids for everything, fills for the traders we watch
 export const mids = {};
-const subs = new Set(); let ws = null, tries = 0;
+const subs = new Set(), tsubs = new Set(); let ws = null, tries = 0;
 const send = m => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); };
 export function live() {
   const open = () => {
     try { ws = new WebSocket('wss://api.hyperliquid.xyz/ws'); } catch { return; }
-    ws.onopen = () => { tries = 0; send({ method: 'subscribe', subscription: { type: 'allMids' } }); subs.forEach(u => send({ method: 'subscribe', subscription: { type: 'userFills', user: u } })); };
+    ws.onopen = () => { tries = 0; send({ method: 'subscribe', subscription: { type: 'allMids' } }); subs.forEach(u => send({ method: 'subscribe', subscription: { type: 'userFills', user: u } })); tsubs.forEach(c => send({ method: 'subscribe', subscription: { type: 'trades', coin: c } })); };
     ws.onmessage = e => {
       try {
         const m = JSON.parse(e.data);
         if (m.channel === 'allMids') { for (const [k, v] of Object.entries(m.data.mids)) mids[k] = +v; emit('mids', mids); }
         else if (m.channel === 'userFills' && m.data && !m.data.isSnapshot) emit('fills', { user: String(m.data.user).toLowerCase(), fills: m.data.fills || [] });
+        else if (m.channel === 'trades' && Array.isArray(m.data)) emit('trades', m.data);
       } catch {}
     };
     ws.onclose = () => { if (tries++ < 30) setTimeout(open, Math.min(30000, 1500 * tries)); };
@@ -49,6 +53,7 @@ export function live() {
   open();
   setInterval(() => send({ method: 'ping' }), 45000);
 }
+export function watchTrades(coins) { for (const c of coins) { if (tsubs.has(c)) continue; tsubs.add(c); send({ method: 'subscribe', subscription: { type: 'trades', coin: c } }); } }
 export function watchFills(users) {
   for (const u of users.map(x => x.toLowerCase())) { if (subs.has(u)) continue; subs.add(u); send({ method: 'subscribe', subscription: { type: 'userFills', user: u } }); }
 }
@@ -59,6 +64,7 @@ export const portfolio = user => info({ type: 'portfolio', user });
 export const fills = user => info({ type: 'userFills', user });
 export const openOrders = user => info({ type: 'frontendOpenOrders', user });
 export const spotAccount = user => info({ type: 'spotClearinghouseState', user });
+export const predictedFundings = () => info({ type: 'predictedFundings' });
 export const candles = (coin, interval, ms) => info({ type: 'candleSnapshot', req: { coin, interval, startTime: Date.now() - ms, endTime: Date.now() } })
   .then(a => a.map(c => ({ t: c.t, o: +c.o, h: +c.h, l: +c.l, c: +c.c, v: +c.v })));
 
@@ -81,3 +87,14 @@ export async function loadBoard() {
   board.data = d; emit('board', d);
   return d;
 }
+
+// ---------------------------------------------------------------- the trenches: pump.fun's live pulse, tokens, holdings and swaps (Jupiter), candles and trades (GeckoTerminal)
+export const gems = (launchpads = ['pump.fun']) => { const f = { timeframe: '24h', launchpads }; return j(JDP + '/v1/pools/gems', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ recent: f, aboutToGraduate: f, graduated: f }) }); };
+export const search = q => j(`${JUP}/tokens/v2/search?query=${encodeURIComponent(q)}`);
+export const holdings = addr => j(`${JUP}/ultra/v1/holdings/${addr}`);
+export const order = p => j(`${JUP}/ultra/v1/order?` + new URLSearchParams(p).toString());
+export const execute = (signedTransaction, requestId) => j(`${JUP}/ultra/v1/execute`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ signedTransaction, requestId }) }, 60000);
+export const gtPools = mint => j(`${GT}/tokens/${mint}/pools`).then(d => (d.data || []).map(p => ({ id: p.attributes.address, dex: p.relationships && p.relationships.dex && p.relationships.dex.data && p.relationships.dex.data.id, liq: +p.attributes.reserve_in_usd || 0 })));
+export const gtCandles = (pool, tf = 'minute', agg = 1, limit = 150) => j(`${GT}/pools/${pool}/ohlcv/${tf}?aggregate=${agg}&limit=${limit}`)
+  .then(d => ((d.data && d.data.attributes && d.data.attributes.ohlcv_list) || []).map(c => ({ t: c[0] * 1000, o: +c[1], h: +c[2], l: +c[3], c: +c[4], v: +c[5] })).reverse());
+export const gtTrades = pool => j(`${GT}/pools/${pool}/trades`).then(d => (d.data || []).map(x => x.attributes));

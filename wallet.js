@@ -1,9 +1,67 @@
-// CHAD · your EVM wallet and Hyperliquid. Nothing here ever sees your wallet's key: the wallet signs typed data once to approve
+// CHAD · your wallets. EVM for Hyperliquid: nothing here ever sees your wallet's key; the wallet signs typed data once to approve
 // a session key born in this browser, and that key signs orders. On Hyperliquid an approved agent can trade, never withdraw.
-import { emit, store } from './core.js';
+// Solana for the trenches, through Wallet Standard (Phantom, Solflare, Backpack...): every swap is built by Jupiter for your
+// address and signed in your wallet. CHAD never holds a key or a coin of yours.
+import { emit, store, b64e, b64d } from './core.js';
 import * as api from './api.js';
 import * as H from './vendor-hl.js?v=1';
 
+// ---------------------------------------------------------------- Solana
+export const sol = { list: [], w: null, account: null, address: null };
+const reg = (...ws) => {
+  for (const w of ws) {
+    if (!w || !w.features || !w.features['solana:signTransaction'] || !w.features['standard:connect']) continue;
+    if (!(w.chains || []).some(c => String(c).startsWith('solana:'))) continue;
+    if (!sol.list.find(x => x.name === w.name)) sol.list.push(w);
+  }
+  emit('wallets');
+  return () => {};
+};
+const WS_API = Object.freeze({ register: reg });
+try {
+  window.addEventListener('wallet-standard:register-wallet', e => { try { e.detail(WS_API); } catch {} });
+  window.dispatchEvent(new CustomEvent('wallet-standard:app-ready', { detail: WS_API }));
+} catch {}
+const useAcc = (w, acc) => {
+  sol.w = w; sol.account = acc; sol.address = acc.address; store.set('chad:sol', w.name);
+  if (w.features['standard:events'] && !w.__chad) { w.__chad = 1; w.features['standard:events'].on('change', ({ accounts }) => { if (sol.w === w && accounts && accounts[0] && accounts[0].address !== sol.address) { sol.account = accounts[0]; sol.address = accounts[0].address; emit('sol'); } }); }
+  emit('sol');
+};
+export async function connectSol(name) {
+  const w = sol.list.find(x => x.name === name) || sol.list[0];
+  if (!w) throw new Error('No Solana wallet found. Install Phantom, Solflare or Backpack.');
+  const r = await w.features['standard:connect'].connect();
+  const acc = (r && r.accounts && r.accounts[0]) || w.accounts[0];
+  if (!acc) throw new Error('The wallet returned no account.');
+  useAcc(w, acc);
+  return sol.address;
+}
+// the wallet this browser used before, without a popup (wallets that allow a silent connect only)
+export async function restoreSol() {
+  const n = store.get('chad:sol'); if (!n || sol.address) return;
+  const w = sol.list.find(x => x.name === n); if (!w) return;
+  try { const r = await w.features['standard:connect'].connect({ silent: true }); const acc = (r && r.accounts && r.accounts[0]) || w.accounts[0]; if (acc) useAcc(w, acc); } catch {}
+}
+export async function disconnectSol() { try { sol.w && sol.w.features['standard:disconnect'] && await sol.w.features['standard:disconnect'].disconnect(); } catch {} sol.w = sol.account = sol.address = null; store.del('chad:sol'); emit('sol'); }
+export async function signSol(txB64) {
+  if (!sol.w || !sol.account) throw new Error('Connect a Solana wallet first.');
+  const f = sol.w.features['solana:signTransaction'];
+  const chain = (sol.account.chains || []).find(c => c === 'solana:mainnet') || 'solana:mainnet';
+  const [res] = await f.signTransaction({ account: sol.account, transaction: b64d(txB64), chain });
+  return b64e(res.signedTransaction);
+}
+// one swap through Jupiter Ultra: an order built for this wallet, signed in the wallet, landed by Jupiter, which reports back
+export async function swap({ inputMint, outputMint, amount }) {
+  if (!sol.address) throw new Error('Connect a Solana wallet first.');
+  const o = await api.order({ inputMint, outputMint, amount: String(amount), taker: sol.address });
+  if (!o.transaction) throw new Error(o.errorMessage || o.error || 'No route for this trade right now.');
+  const signed = await signSol(o.transaction);
+  const r = await api.execute(signed, o.requestId);
+  if (r.status !== 'Success') throw Object.assign(new Error(r.error || 'The swap failed onchain.'), { sig: r.signature });
+  return { sig: r.signature, inAmt: r.inputAmountResult || o.inAmount, outAmt: r.outputAmountResult || o.outAmount, order: o };
+}
+
+// ---------------------------------------------------------------- EVM (Hyperliquid)
 export const evm = { list: [], p: null, name: null, icon: null, address: null, chainId: null };
 try {
   window.addEventListener('eip6963:announceProvider', e => {

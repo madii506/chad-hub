@@ -427,6 +427,138 @@ export function tape() {
   }, true);
 }
 
+// ---------------------------------------------------------------- heatmap: the biggest perps as tiles, sized by volume or open interest, colored by the day's move or funding
+const HM = { size: 'vol', col: 'chg' };
+function squarify(items, x, y, w, h) {
+  const out = [], total = items.reduce((s, i) => s + i.v, 0); if (!total || w <= 0 || h <= 0) return out;
+  let rest = items.map(i => ({ ...i, a: (i.v * w * h) / total })), X = x, Y = y, Wd = w, Ht = h;
+  while (rest.length) {
+    const side = Math.min(Wd, Ht); let row = [], best = Infinity;
+    for (const it of rest) {
+      const r = [...row, it], sum = r.reduce((a, b) => a + b.a, 0), mx = Math.max(...r.map(z => z.a)), mn = Math.min(...r.map(z => z.a));
+      const worst = Math.max((side * side * mx) / (sum * sum), (sum * sum) / (side * side * mn));
+      if (worst > best) break; best = worst; row = r;
+    }
+    const sum = row.reduce((a, b) => a + b.a, 0);
+    if (Wd >= Ht) { const cw = sum / Ht; let yy = Y; for (const r of row) { const rh = r.a / cw; out.push({ ...r, x: X, y: yy, w: cw, h: rh }); yy += rh; } X += cw; Wd -= cw; }
+    else { const rh = sum / Wd; let xx = X; for (const r of row) { const cw = r.a / rh; out.push({ ...r, x: xx, y: Y, w: cw, h: rh }); xx += cw; } Y += rh; Ht -= rh; }
+    rest = rest.slice(row.length);
+  }
+  return out;
+}
+export function heatmap() {
+  const draw = b => {
+    const box = $('#hmB', b); if (!box) return;
+    if (!api.perps.list.length) { box.innerHTML = '<p class="empty mono">Reading Hyperliquid…</p>'; return; }
+    const key = p => (HM.size === 'vol' ? p.vol : p.oi), L = api.perps.list.filter(p => key(p) > 0).sort((a, b) => key(b) - key(a)).slice(0, innerWidth < 620 ? 28 : 48);
+    const R = squarify(L.map(p => ({ p, v: key(p) })), 0, 0, box.clientWidth || 900, box.clientHeight || 520);
+    box.innerHTML = R.map(({ p, x, y, w, h }) => {
+      const v = HM.col === 'chg' ? p.chg : p.fund * 24 * 365 * 100, k = Math.max(-1, Math.min(1, (v || 0) / (HM.col === 'chg' ? 8 : 60)));
+      const bg = k >= 0 ? `rgba(54,215,122,${(.1 + .6 * k).toFixed(3)})` : `rgba(255,77,90,${(.1 + .6 * -k).toFixed(3)})`, fs = Math.max(10, Math.min(30, Math.sqrt(w * h) / 7));
+      const lab = HM.col === 'chg' ? pct(p.chg, 2) : (v >= 0 ? '+' : '') + v.toFixed(1) + '% APR';
+      return `<button type="button" class="hm-t" data-coin="${esc(p.name)}" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px;width:${w.toFixed(1)}px;height:${h.toFixed(1)}px;background:${bg}" title="${esc(p.name)} · ${esc(lab)} · ${usd(p.vol)} 24h volume · ${usd(p.oi)} open interest">${w > 34 && h > 22 ? `<b style="font-size:${fs.toFixed(0)}px">${esc(p.name)}</b>` : ''}${w > 64 && h > 44 ? `<span>${esc(lab)}</span>` : ''}${w > 92 && h > 66 ? `<em data-px="${esc(p.name)}">${px(api.mids[p.name] || p.mark)}</em>` : ''}</button>`;
+    }).join('');
+  };
+  const seg = (id, cur, opts) => `<div class="seg seg-sm" id="${id}">${opts.map(([k, l]) => `<button type="button" data-v="${k}" class="${cur === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+  panel('Heatmap', `<div class="mk-top">${seg('hmS', HM.size, [['vol', 'Size: volume'], ['oi', 'Size: open interest']])}${seg('hmC', HM.col, [['chg', 'Color: 24h move'], ['fund', 'Color: funding']])}</div>
+    <div class="hm" id="hmB"></div><p class="m-note">The biggest Hyperliquid perps, live from its public API. A tile's size is its 24h volume or open interest; its color is the day's move (full at ±8%) or the funding rate's yearly pace (full at ±60%). Click a tile to open the coin.</p>`, b => {
+    const ro = new ResizeObserver(() => draw(b)); ro.observe($('#hmB', b)); draw(b);
+    b.onclick = e => {
+      const sb = e.target.closest('#hmS button'); if (sb) { HM.size = sb.dataset.v; $$('#hmS button', b).forEach(x => x.classList.toggle('on', x === sb)); return draw(b); }
+      const cb = e.target.closest('#hmC button'); if (cb) { HM.col = cb.dataset.v; $$('#hmC button', b).forEach(x => x.classList.toggle('on', x === cb)); return draw(b); }
+      const t = e.target.closest('.hm-t'); if (t) markets(t.dataset.coin);
+    };
+    let last = 0;
+    H.mids = () => { if (Date.now() - last < 1500) return; last = Date.now(); $$('#hmB [data-px]', b).forEach(el => { const v = api.mids[el.dataset.px]; if (v) el.textContent = px(v); }); };
+    H.perps = () => draw(b);
+    whenClosed(() => { H.mids = H.perps = null; ro.disconnect(); });
+    if (!api.perps.list.length) api.loadPerps().then(() => draw(b)).catch(() => {});
+  }, true);
+}
+
+// ---------------------------------------------------------------- whale trades: every big market order on the most traded perps, from Hyperliquid's public trade feed
+const WH = { min: 100000, side: 'all', list: [], seen: new Set(), agg: new Map(), on: false };
+const ZERO = /^0x0+$/;
+function whaleFeed(T) {
+  for (const t of T) {
+    if (WH.seen.has(t.tid)) continue; WH.seen.add(t.tid);
+    const taker = lc(t.side === 'B' ? t.users && t.users[0] : t.users && t.users[1]), ntl = +t.px * +t.sz, k = (t.hash && !ZERO.test(t.hash) ? t.hash : t.time + taker) + t.side + t.coin;
+    let g = WH.agg.get(k);
+    if (!g) { g = { coin: t.coin, side: t.side, ntl: 0, sz: 0, time: t.time, taker, shown: false }; WH.agg.set(k, g); }
+    g.ntl += ntl; g.sz += +t.sz;
+    if (!g.shown && g.ntl >= 50000) { g.shown = true; WH.list.push(g); }
+  }
+  if (WH.seen.size > 40000) WH.seen.clear();
+  if (WH.agg.size > 6000) { const cut = Date.now() - 120000; for (const [k, g] of WH.agg) if (g.time < cut) WH.agg.delete(k); }
+  WH.list.sort((a, b) => b.time - a.time); WH.list.length = Math.min(WH.list.length, 500);
+  if (H.whale) H.whale();
+}
+function whaleStart() {
+  if (WH.on) return; WH.on = true; on('trades', whaleFeed);
+  const go = () => { const top = api.perps.list.slice().sort((a, b) => b.vol - a.vol).slice(0, 12).map(p => p.name); api.watchTrades(top.length ? top : ['BTC', 'ETH', 'SOL', 'HYPE', 'XRP', 'DOGE']); };
+  if (api.perps.list.length) go(); else api.loadPerps().then(go).catch(go);
+}
+export function whales() {
+  whaleStart();
+  const draw = b => {
+    const box = $('#whT', b); if (!box) return;
+    const L = WH.list.filter(g => g.ntl >= WH.min && (WH.side === 'all' || (WH.side === 'b') === (g.side === 'B'))).slice(0, 160);
+    box.innerHTML = L.length ? L.map(g => { const r = rowOf(g.taker), rk = rankOf(g.taker); return `<button type="button" class="wh-r" data-a="${esc(g.taker)}"><time>${new Date(g.time).toLocaleTimeString('en-US', { hour12: false })}</time><span class="wh-c">${coinIcon(g.coin, 'ci')}<b>${esc(g.coin)}</b></span><em class="${g.side === 'B' ? 'up' : 'dn'}">${g.side === 'B' ? 'Buy' : 'Sell'}</em><span class="r"><b>${usd(g.ntl)}</b></span><span class="r">@ ${px(g.ntl / g.sz)}</span><span class="wh-w">${rkTag(rk)}${esc(r ? nameOf(r) : short(g.taker))}</span></button>`; }).join('')
+      : `<p class="empty mono">Listening to Hyperliquid's trade feed. Every market order of ${usd(WH.min)} or more on the 12 most traded perps shows up here as it fills.</p>`;
+  };
+  const seg = (id, cur, opts) => `<div class="seg seg-sm" id="${id}">${opts.map(([k, l]) => `<button type="button" data-v="${k}" class="${String(cur) === String(k) ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+  panel('Whale trades', `<div class="mk-top">${seg('whS', WH.side, [['all', 'Both sides'], ['b', 'Buys'], ['s', 'Sells']])}${seg('whM', WH.min, [[50000, '$50K+'], [100000, '$100K+'], [500000, '$500K+'], [1000000, '$1M+']])}</div>
+    <div class="tp-t" id="whT"></div><p class="m-note">Live from Hyperliquid's public trade feed. Fills from one order are added up, so a market order that sweeps the book shows once, at its average price. The trader is the wallet that sent it; click one to open them on the desk.</p>`, b => {
+    draw(b);
+    b.onclick = e => {
+      const s1 = e.target.closest('#whS button'); if (s1) { WH.side = s1.dataset.v; $$('#whS button', b).forEach(x => x.classList.toggle('on', x === s1)); return draw(b); }
+      const s2 = e.target.closest('#whM button'); if (s2) { WH.min = +s2.dataset.v; $$('#whM button', b).forEach(x => x.classList.toggle('on', x === s2)); return draw(b); }
+      const r = e.target.closest('.wh-r'); if (r && r.dataset.a) pick(r.dataset.a);
+    };
+    let last = 0, tm = null; H.whale = () => { const now = Date.now(); if (now - last < 600) { clearTimeout(tm); tm = setTimeout(() => draw(b), 650); return; } last = now; draw(b); };
+    whenClosed(() => { H.whale = null; });
+  }, true);
+}
+
+// ---------------------------------------------------------------- funding arb: Hyperliquid's funding against Binance and Bybit, all as a yearly pace
+const FA = { at: 0, rows: [], sort: 'gap' };
+const VEN = { HlPerp: 'hl', BinPerp: 'bin', BybitPerp: 'byb' };
+async function fundLoad(force) {
+  if (!force && Date.now() - FA.at < 60000 && FA.rows.length) return;
+  const d = await api.predictedFundings();
+  FA.rows = (d || []).map(([coin, vs]) => {
+    const o = { coin };
+    for (const [v, x] of vs || []) { const k = VEN[v]; if (k && x && x.fundingRate != null) { const h = +x.fundingIntervalHours || (k === 'hl' ? 1 : 8); o[k] = +x.fundingRate * (24 / h) * 365 * 100; o[k + 'N'] = +x.nextFundingTime; } }
+    if (o.hl != null) { const others = ['bin', 'byb'].filter(k => o[k] != null); if (others.length) { const far = others.reduce((a, k) => (Math.abs(o.hl - o[k]) > Math.abs(o.hl - o[a]) ? k : a), others[0]); o.gap = o.hl - o[far]; o.vs = far; } }
+    return o;
+  }).filter(o => o.hl != null);
+  FA.at = Date.now();
+}
+const apr = v => (v == null || !isFinite(v) ? '<span class="muted">—</span>' : `<span class="${cls(v)}">${v >= 0 ? '+' : ''}${Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1)}%</span>`);
+const until = t => { const s = Math.max(0, (t - Date.now()) / 1000); return s < 3600 ? Math.floor(s / 60) + 'm ' + String(Math.floor(s % 60)).padStart(2, '0') + 's' : Math.floor(s / 3600) + 'h ' + Math.floor((s % 3600) / 60) + 'm'; };
+export function funding() {
+  const draw = b => {
+    const box = $('#faT', b); if (!box) return;
+    if (!FA.rows.length) { box.innerHTML = '<p class="empty mono">Reading the funding rates…</p>'; return; }
+    const k = { gap: o => (o.gap == null ? -1 : Math.abs(o.gap)), hi: o => o.hl, lo: o => -o.hl }[FA.sort];
+    const L = FA.rows.slice().sort((a, b) => k(b) - k(a)).slice(0, 60), NAME = { bin: 'Binance', byb: 'Bybit' };
+    box.innerHTML = `<div class="fa-h"><span>Coin</span><span class="r">Hyperliquid</span><span class="r">Binance</span><span class="r">Bybit</span><span class="r">Gap</span><span class="r">Next on HL</span></div>` + L.map(o => `
+      <a class="fa-r" href="https://app.hyperliquid.xyz/trade/${encodeURIComponent(o.coin)}" target="_blank" rel="noopener"><span class="mk-c">${coinIcon(o.coin, 'ci')}<b>${esc(o.coin)}</b></span><span class="r">${apr(o.hl)}</span><span class="r">${apr(o.bin)}</span><span class="r">${apr(o.byb)}</span><span class="r">${o.gap == null ? '<span class="muted">—</span>' : `${apr(o.gap)} <em>vs ${NAME[o.vs]}</em>`}</span><span class="r mono" data-next="${o.hlN || ''}">${o.hlN ? until(o.hlN) : '—'}</span></a>`).join('');
+  };
+  panel('Funding arb', `<div class="mk-top"><div class="seg seg-sm" id="faS">${[['gap', 'Biggest gap'], ['hi', 'HL highest'], ['lo', 'HL lowest']].map(([k, l]) => `<button type="button" data-v="${k}" class="${FA.sort === k ? 'on' : ''}">${l}</button>`).join('')}</div><button type="button" class="btn btn-sm btn-line" id="faR">Refresh</button></div>
+    <div class="mk-t fa-t" id="faT"></div><p class="m-note">The next funding payment on each venue, as Hyperliquid's API predicts it, shown as a yearly pace. Positive means longs pay shorts. A wide gap is where basis traders short the side that pays and long the side that's paid; fees, price moves and liquidations eat into it. Click a coin to trade it on Hyperliquid.</p>`, b => {
+    draw(b);
+    const load = f => fundLoad(f).then(() => draw(b)).catch(() => { const T = $('#faT', b); if (T && !FA.rows.length) T.innerHTML = '<p class="empty mono">Could not reach Hyperliquid. Try Refresh in a moment.</p>'; });
+    load(false);
+    b.onclick = e => {
+      const s1 = e.target.closest('#faS button'); if (s1) { FA.sort = s1.dataset.v; $$('#faS button', b).forEach(x => x.classList.toggle('on', x === s1)); return draw(b); }
+      if (e.target.closest('#faR')) load(true);
+    };
+    const iv = setInterval(() => { $$('[data-next]', b).forEach(el => { const t = +el.dataset.next; if (t) el.textContent = until(t); }); if (Date.now() - FA.at > 60000) load(true); }, 1000);
+    whenClosed(() => clearInterval(iv));
+  }, true);
+}
+
 // ---------------------------------------------------------------- the board as a CSV, the trader as a link
 export function exportCsv() {
   const d = api.board.data; if (!d) return toast('The board is still loading.', 'err', 3000);
@@ -447,6 +579,8 @@ const openHl = () => { const a = sel(); if (a) window.open('https://app.hyperliq
 const PAL = { i: 0, items: [] };
 const clickTab = k => { const b = $(`#bTabs button[data-b=${k}]`); if (b) b.click(); scrollTo(0); };
 const ACTS = () => [
+  ['Trenches', 'pump.fun coins as they launch, and trade them', 'N', () => BASE.trench && BASE.trench()],
+  ['Heatmap', 'the biggest perps as tiles, live', 'G', heatmap], ['Whale trades', 'every big market order on Hyperliquid', 'B', whales], ['Funding arb', 'Hyperliquid funding vs Binance and Bybit', 'U', funding],
   ['Markets', 'every Hyperliquid perp, live', 'M', () => markets()], ['Compare traders', 'two traders, head to head', 'H', () => compare()],
   ['Share card', 'the trader on the desk, as a picture to post', 'S', () => share()], ['Alerts', 'a ping when a starred trader trades', 'A', alerts],
   ['Liquidation watch', 'the top traders closest to getting liquidated', 'L', liqs], ['Watchlist', 'your starred traders', 'W', watch], ['Live tape', 'every big fill from the top traders', '', tape],
@@ -494,12 +628,12 @@ export function init(base) {
   $('#palR').addEventListener('mousemove', e => { const b = e.target.closest('.pal-i'); if (b && +b.dataset.i !== PAL.i) { PAL.i = +b.dataset.i; $$('.pal-i', $('#palR')).forEach(x => x.classList.toggle('on', x === b)); } });
   $('#pal').addEventListener('click', e => { if (e.target.id === 'pal') palClose(); });
   $('#navPal').onclick = palette; $('#navMkt').onclick = () => markets(); $('#navCmp').onclick = () => compare(); $('#navShare').onclick = () => share(); $('#navAlerts').onclick = alerts;
-  $('#navLiq').onclick = liqs; $('#navWatch').onclick = watch; $('#navSize').onclick = sizer; $('#navRoll').onclick = e => roll(e.shiftKey ? 'virgins' : 'chads'); $('#navFocus').onclick = focus; $('#navTape').onclick = tape;
+  $('#navLiq').onclick = liqs; $('#navHeat').onclick = heatmap; $('#navWhale').onclick = whales; $('#navFund').onclick = funding; $('#navWatch').onclick = watch; $('#navSize').onclick = sizer; $('#navRoll').onclick = e => roll(e.shiftKey ? 'virgins' : 'chads'); $('#navFocus').onclick = focus; $('#navTape').onclick = tape;
   // the more menu
   const mb = $('#navMore'), mm = $('#moreMenu');
   const mClose = () => { mm.hidden = true; mb.setAttribute('aria-expanded', 'false'); };
   mb.onclick = e => { e.stopPropagation(); mm.hidden = !mm.hidden; mb.setAttribute('aria-expanded', String(!mm.hidden)); };
-  mm.onclick = e => { const b = e.target.closest('button[data-m]'); if (!b) return; mClose(); ({ keys: BASE.keys, csv: exportCsv, link: copyLink, hl: openHl, replay: BASE.replay, sound: BASE.sound, settings: BASE.settings, tape, sizer, roll: () => roll('chads'), virgin: () => roll('virgins'), focus, music: BASE.music }[b.dataset.m] || (() => {}))(); };
+  mm.onclick = e => { if (e.target.closest('a')) { mClose(); return; } const b = e.target.closest('button[data-m]'); if (!b) return; mClose(); ({ heat: heatmap, whale: whales, fund: funding, trench: BASE.trench, keys: BASE.keys, csv: exportCsv, link: copyLink, hl: openHl, replay: BASE.replay, sound: BASE.sound, settings: BASE.settings, tape, sizer, roll: () => roll('chads'), virgin: () => roll('virgins'), focus, music: BASE.music }[b.dataset.m] || (() => {}))(); };
   document.addEventListener('click', e => { if (!mm.hidden && !e.target.closest('#moreMenu')) mClose(); });
   addEventListener('keydown', e => { if (e.key === 'Escape') { mClose(); if (!$('#pal').hidden) palClose(); } });
   // toasts from alerts open the trader
@@ -515,4 +649,4 @@ export function init(base) {
   const nav = $('#nav'), prog = () => { const h = document.documentElement.scrollHeight - innerHeight; nav.style.setProperty('--sp', h > 0 ? Math.min(1, scrollY / h).toFixed(4) : 0); };
   addEventListener('scroll', prog, { passive: true }); prog();
 }
-export const keys = { k: palette, m: () => markets(), h: () => compare(), s: () => share(), a: alerts, e: exportCsv, l: liqs, w: watch, z: sizer, r: () => roll('chads') };
+export const keys = { k: palette, m: () => markets(), h: () => compare(), s: () => share(), a: alerts, e: exportCsv, l: liqs, w: watch, z: sizer, r: () => roll('chads'), g: heatmap, b: whales, u: funding };
