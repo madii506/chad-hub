@@ -6,13 +6,17 @@ import * as W from './wallet.js';
 import * as desk from './desk.js';
 import * as sections from './sections.js';
 import * as T from './tools.js';
+import { createMusic } from './music.js?v=1';
 
 const html = document.documentElement;
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 const soundOn = () => store.get('chad:sound', true) !== false;
 html.classList.toggle('muted', !soundOn());
+const MUS = createMusic(), musicOn = () => store.get('chad:music', true) !== false;
+const musicBtn = () => { const b = $('#navMusic'); if (b) b.classList.toggle('on', MUS.playing); };
+setInterval(musicBtn, 1000);
 
-// ---------------------------------------------------------------- the intro: up the tower, through the panic, into his aviators
+// ---------------------------------------------------------------- the intro: up the tower, through the panic, into his chair and his screen
 let AUD = null;
 const introDone = new Promise(res => {
   const el = $('#intro'), cv = $('#introCv');
@@ -20,15 +24,18 @@ const introDone = new Promise(res => {
   const force = /[?&]intro\b/.test(location.search);
   const skip = /[?&]nointro\b/.test(location.search) || (!force && W.settings().intro === false) || reduced() || !webgl;
   let done = false, ctrl = null;
-  const end = () => { if (done) return; done = true; html.classList.remove('intro'); if (AUD) AUD.fade(1.4); res(); setTimeout(() => el.remove(), 1300); };
+  const end = () => { if (done) return; done = true; html.classList.remove('intro'); if (AUD) AUD.fade(1.4); if (MUS.playing) { MUS.drop(); MUS.level(.3, 2.5); } musicBtn(); res(); setTimeout(() => el.remove(), 1300); };
   if (skip || !cv) return end();
   import('./audio.js?v=1').then(m => { AUD = m.createAudio(); if (AUD && soundOn()) AUD.begin().then(() => { if (!AUD.running) $('#introSnd').classList.add('pulse'); }); }).catch(() => {});
   const sb = $('#introSnd');
   sb.addEventListener('pointerdown', e => e.stopPropagation());
-  sb.addEventListener('click', e => { e.stopPropagation(); sb.classList.remove('pulse'); const v = !(soundOn() && AUD && AUD.running); store.set('chad:sound', v); html.classList.toggle('muted', !v); if (AUD) v ? AUD.begin() : AUD.mute(); });
-  el.addEventListener('pointerdown', () => { if (AUD && soundOn() && !AUD.running) { AUD.begin(); sb.classList.remove('pulse'); return; } ctrl && ctrl.skip(); });
+  sb.addEventListener('click', e => { e.stopPropagation(); sb.classList.remove('pulse'); const v = !(soundOn() && AUD && AUD.running); store.set('chad:sound', v); html.classList.toggle('muted', !v); if (AUD) v ? AUD.begin() : AUD.mute(); if (v) { MUS.unlock(); if (musicOn() && fired.doors) MUS.start({ vol: .5 }); } else MUS.stop(); });
+  el.addEventListener('pointerdown', () => { if (AUD && soundOn() && !AUD.running) { AUD.begin(); MUS.unlock(); if (musicOn() && fired.doors) MUS.start({ vol: .5 }); sb.classList.remove('pulse'); return; } ctrl && ctrl.skip(); });
+  // the film's cues: its own effects, plus the theme from the doors on and the drop when the shades land
+  const fired = {};
+  const H = new Proxy({}, { get: (_, k) => (...a) => { try { const h = AUD && AUD.running ? AUD.hooks() : null; if (h && h[k]) h[k](...a); } catch {} fired[k] = 1; if (k === 'doors' && soundOn() && musicOn()) MUS.start({ vol: .5 }).then(musicBtn); if (k === 'shades') MUS.drop(); } });
   addEventListener('keydown', e => { if (!done && /Escape|Enter| /.test(e.key)) ctrl && ctrl.skip(); });
-  import('./intro3d.js?v=1').then(async m => { ctrl = await m.run({ canvas: cv, face: '/favicon-192.png?v=1', onDone: end, audio: AUD ? AUD.hooks() : null, getAudio: () => AUD }); }).catch(e => { console.error(e); end(); });
+  import('./intro3d.js?v=1').then(async m => { ctrl = await m.run({ canvas: cv, onDone: end, audio: H }); }).catch(e => { console.error(e); end(); });
   setTimeout(end, 30000);                                       // never hold the page hostage
 });
 
@@ -92,7 +99,7 @@ setTimeout(() => {   // quiet reconnect of the wallet this browser used before
 const tools = {
   find: () => T.palette(), markets: () => T.markets(), compare: () => T.compare(), share: () => T.share(), alerts: () => T.alerts(), csv: () => T.exportCsv(), liqs: () => T.liqs(), watch: () => T.watch(), sizer: () => T.sizer(), roll: () => T.roll('chads'), tape: () => T.tape(), focus: () => T.focus(),
   mine: () => scrollTo('#mine', { offset: -80 }),
-  keys: () => panel('Keyboard shortcuts', `<div class="keys">${[['⌘K', 'Search everything'], ['/', 'Search everything'], ['M', 'Markets'], ['H', 'Compare traders'], ['S', 'Share card'], ['A', 'Alerts'], ['L', 'Liquidation watch'], ['W', 'Watchlist'], ['Z', 'Position sizer'], ['R', 'Random chad'], ['E', 'Export the board'], ['T', 'Tail mode'], ['F', 'Fade mode'], ['C', 'Chads board'], ['V', 'Virgins board'], ['?', 'This list'], ['Esc', 'Close any panel']].map(([k, d]) => `<div><span class="kbd">${esc(k)}</span><b>${esc(d)}</b></div>`).join('')}</div>`),
+  keys: () => panel('Keyboard shortcuts', `<div class="keys">${[['⌘K', 'Search everything'], ['/', 'Search everything'], ['M', 'Markets'], ['H', 'Compare traders'], ['S', 'Share card'], ['A', 'Alerts'], ['L', 'Liquidation watch'], ['W', 'Watchlist'], ['Z', 'Position sizer'], ['R', 'Random chad'], ['P', 'Chad music'], ['E', 'Export the board'], ['T', 'Tail mode'], ['F', 'Fade mode'], ['C', 'Chads board'], ['V', 'Virgins board'], ['?', 'This list'], ['Esc', 'Close any panel']].map(([k, d]) => `<div><span class="kbd">${esc(k)}</span><b>${esc(d)}</b></div>`).join('')}</div>`),
   settings: () => {
     const s = W.settings();
     const seg = (k, opts) => `<div class="seg seg-sm set-seg" data-k="${k}">${opts.map(([v, l]) => `<button type="button" data-v="${v}" class="${String(s[k]) === String(v) ? 'on' : ''}">${l}</button>`).join('')}</div>`;
@@ -110,10 +117,11 @@ const tools = {
     });
   },
   replay: () => { location.href = location.pathname + '?intro'; },
-  sound: () => { const v = !soundOn(); store.set('chad:sound', v); html.classList.toggle('muted', !v); toast(v ? 'Sound on for the intro.' : 'Sound off.', '', 2200); },
+  music: async () => { if (MUS.playing) { MUS.stop(); store.set('chad:music', false); toast('Music off.', '', 1800); } else { store.set('chad:music', true); await MUS.start({ drop: true, vol: .32 }); toast('Chad music on. ♪', '', 1800); } setTimeout(musicBtn, 60); },
+  sound: () => { const v = !soundOn(); store.set('chad:sound', v); html.classList.toggle('muted', !v); if (!v) { MUS.stop(); setTimeout(musicBtn, 60); } toast(v ? 'Sound on for the intro.' : 'Sound off.', '', 2200); },
 };
-$('#navMine').onclick = tools.mine; $('#navSet').onclick = tools.settings;
-T.init({ mine: tools.mine, settings: tools.settings, keys: tools.keys, replay: tools.replay, sound: tools.sound });
+$('#navMine').onclick = tools.mine; $('#navSet').onclick = tools.settings; $('#navMusic').onclick = tools.music;
+T.init({ mine: tools.mine, settings: tools.settings, keys: tools.keys, replay: tools.replay, sound: tools.sound, music: tools.music });
 addEventListener('keydown', e => {
   if (e.key === 'Escape') { $('#modal').hidden = true; return; }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); T.palette(); return; }
@@ -121,6 +129,7 @@ addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   if (e.key === '/') { e.preventDefault(); tools.find(); }
   else if (e.key === '?') tools.keys();
+  else if (k === 'p') tools.music();
   else if (T.keys[k] && k !== 'k' && $('#pal').hidden) T.keys[k]();
   else if (k === 't' && window.__chad) window.__chad.mode('tail');
   else if (k === 'f' && window.__chad) window.__chad.mode('fade');

@@ -44,9 +44,9 @@ export function createAudio() {
     hooks() {
       return {
         ding: () => { if (!running) return; const t = now(); tone(1046.5, t, 1.4, .12); tone(1318.5, t + .02, 1.6, .09); tone(2093, t, .5, .03); },
-        doors: () => { if (!running) return; burst(now(), .7, .08, 300, 2400); startBeat(); },
+        doors: () => { if (!running) return; burst(now(), .7, .08, 300, 2400); },
         step: k => { if (!running) return; burst(now(), .05, .05 * (k || 1), 800, 3000); },
-        sit: () => { if (!running) return; stopBeat(); chord(); burst(now(), .5, .05, 600, 3000); },
+        sit: () => { if (!running) return; burst(now(), .5, .05, 600, 3000); },
         key: () => { if (!running) return; const t = now(); burst(t, .018, .05, 2500, 9000); tone(1900 + Math.random() * 500, t, .012, .012, 'square'); },
         chair: () => { if (!running) return; const t = now(), s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain(); s.buffer = NB; f.type = 'bandpass'; f.Q.value = 3; f.frequency.setValueAtTime(500, t); f.frequency.exponentialRampToValueAtTime(1400, t + .6); s.connect(f); f.connect(g); g.connect(out); env(g, t, .15, .5, .07); s.start(t); s.stop(t + .8); },
         granted: () => { if (!running) return; const t = now(); tone(880, t, .35, .07, 'triangle'); tone(1318.5, t + .09, .5, .07, 'triangle'); tone(1760, t + .18, .7, .05, 'sine'); },

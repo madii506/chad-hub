@@ -456,7 +456,7 @@ const ACTS = () => [
   ['Your account', 'positions, orders, TP/SL, close all', '', () => BASE.mine && BASE.mine()], ['Export the board as CSV', 'the board and window you are looking at', 'E', exportCsv],
   ['Copy link to this trader', 'opens the desk on him', '', copyLink], ['Open him on Hyperliquid', 'the explorer page of the trader on the desk', '', openHl],
   ['Settings', 'slippage, follow interval, intro, sound', '', () => BASE.settings && BASE.settings()], ['Keyboard shortcuts', 'every key', '?', () => BASE.keys && BASE.keys()],
-  ['Replay the intro', 'the elevator, once more', '', () => BASE.replay && BASE.replay()], ['Sound on or off', 'for the intro', '', () => BASE.sound && BASE.sound()],
+  ['Chad music', 'the theme, on or off', 'P', () => BASE.music && BASE.music()], ['Replay the intro', 'the elevator, once more', '', () => BASE.replay && BASE.replay()], ['Sound on or off', 'for the intro', '', () => BASE.sound && BASE.sound()],
 ];
 function palItems(q) {
   q = q.trim(); const ql = q.toLowerCase(), out = [], d = api.board.data;
@@ -499,7 +499,7 @@ export function init(base) {
   const mb = $('#navMore'), mm = $('#moreMenu');
   const mClose = () => { mm.hidden = true; mb.setAttribute('aria-expanded', 'false'); };
   mb.onclick = e => { e.stopPropagation(); mm.hidden = !mm.hidden; mb.setAttribute('aria-expanded', String(!mm.hidden)); };
-  mm.onclick = e => { const b = e.target.closest('button[data-m]'); if (!b) return; mClose(); ({ keys: BASE.keys, csv: exportCsv, link: copyLink, hl: openHl, replay: BASE.replay, sound: BASE.sound, settings: BASE.settings, tape, sizer, roll: () => roll('chads'), virgin: () => roll('virgins'), focus }[b.dataset.m] || (() => {}))(); };
+  mm.onclick = e => { const b = e.target.closest('button[data-m]'); if (!b) return; mClose(); ({ keys: BASE.keys, csv: exportCsv, link: copyLink, hl: openHl, replay: BASE.replay, sound: BASE.sound, settings: BASE.settings, tape, sizer, roll: () => roll('chads'), virgin: () => roll('virgins'), focus, music: BASE.music }[b.dataset.m] || (() => {}))(); };
   document.addEventListener('click', e => { if (!mm.hidden && !e.target.closest('#moreMenu')) mClose(); });
   addEventListener('keydown', e => { if (e.key === 'Escape') { mClose(); if (!$('#pal').hidden) palClose(); } });
   // toasts from alerts open the trader
