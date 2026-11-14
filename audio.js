@@ -1,5 +1,5 @@
 // CHAD · the intro's sound, synthesized: an elevator hum and a ding, then a slow, sure beat across the trading floor,
-// a warm chord at the window, a click of the shades and a rise into the lens. Starts quiet; one tap mutes it.
+// a warm chord as he sits, a click of the shades, keys, a chime when the desk lets him in, and a rise into the screen. Starts quiet; one tap mutes it.
 export function createAudio() {
   let ctx = null, out = null, running = false, beat = null, pad = null;
   const now = () => ctx.currentTime;
@@ -47,6 +47,9 @@ export function createAudio() {
         doors: () => { if (!running) return; burst(now(), .7, .08, 300, 2400); startBeat(); },
         step: k => { if (!running) return; burst(now(), .05, .05 * (k || 1), 800, 3000); },
         sit: () => { if (!running) return; stopBeat(); chord(); burst(now(), .5, .05, 600, 3000); },
+        key: () => { if (!running) return; const t = now(); burst(t, .018, .05, 2500, 9000); tone(1900 + Math.random() * 500, t, .012, .012, 'square'); },
+        chair: () => { if (!running) return; const t = now(), s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain(); s.buffer = NB; f.type = 'bandpass'; f.Q.value = 3; f.frequency.setValueAtTime(500, t); f.frequency.exponentialRampToValueAtTime(1400, t + .6); s.connect(f); f.connect(g); g.connect(out); env(g, t, .15, .5, .07); s.start(t); s.stop(t + .8); },
+        granted: () => { if (!running) return; const t = now(); tone(880, t, .35, .07, 'triangle'); tone(1318.5, t + .09, .5, .07, 'triangle'); tone(1760, t + .18, .7, .05, 'sine'); },
         shades: () => { if (!running) return; const t = now(); tone(2600, t, .05, .06, 'square'); tone(3400, t + .03, .05, .04, 'square'); },
         dive: () => { if (!running) return; const t = now(), s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain(); s.buffer = NB; f.type = 'bandpass'; f.frequency.setValueAtTime(300, t); f.frequency.exponentialRampToValueAtTime(5000, t + 1.1); s.connect(f); f.connect(g); g.connect(out); env(g, t, .9, .4, .14); s.start(t); s.stop(t + 1.4); kick(t + 1.15); },
       };
