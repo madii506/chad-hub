@@ -90,9 +90,9 @@ setTimeout(() => {   // quiet reconnect of the wallet this browser used before
 
 // ---------------------------------------------------------------- tools: search, markets, compare, share, alerts, your account, keys, settings, replay, sound
 const tools = {
-  find: () => T.palette(), markets: () => T.markets(), compare: () => T.compare(), share: () => T.share(), alerts: () => T.alerts(), csv: () => T.exportCsv(),
+  find: () => T.palette(), markets: () => T.markets(), compare: () => T.compare(), share: () => T.share(), alerts: () => T.alerts(), csv: () => T.exportCsv(), liqs: () => T.liqs(), watch: () => T.watch(), sizer: () => T.sizer(), roll: () => T.roll('chads'), tape: () => T.tape(), focus: () => T.focus(),
   mine: () => scrollTo('#mine', { offset: -80 }),
-  keys: () => panel('Keyboard shortcuts', `<div class="keys">${[['⌘K', 'Search everything'], ['/', 'Search everything'], ['M', 'Markets'], ['H', 'Compare traders'], ['S', 'Share card'], ['A', 'Alerts'], ['E', 'Export the board'], ['T', 'Tail mode'], ['F', 'Fade mode'], ['C', 'Chads board'], ['V', 'Virgins board'], ['?', 'This list'], ['Esc', 'Close any panel']].map(([k, d]) => `<div><span class="kbd">${esc(k)}</span><b>${esc(d)}</b></div>`).join('')}</div>`),
+  keys: () => panel('Keyboard shortcuts', `<div class="keys">${[['⌘K', 'Search everything'], ['/', 'Search everything'], ['M', 'Markets'], ['H', 'Compare traders'], ['S', 'Share card'], ['A', 'Alerts'], ['L', 'Liquidation watch'], ['W', 'Watchlist'], ['Z', 'Position sizer'], ['R', 'Random chad'], ['E', 'Export the board'], ['T', 'Tail mode'], ['F', 'Fade mode'], ['C', 'Chads board'], ['V', 'Virgins board'], ['?', 'This list'], ['Esc', 'Close any panel']].map(([k, d]) => `<div><span class="kbd">${esc(k)}</span><b>${esc(d)}</b></div>`).join('')}</div>`),
   settings: () => {
     const s = W.settings();
     const seg = (k, opts) => `<div class="seg seg-sm set-seg" data-k="${k}">${opts.map(([v, l]) => `<button type="button" data-v="${v}" class="${String(s[k]) === String(v) ? 'on' : ''}">${l}</button>`).join('')}</div>`;
@@ -114,7 +114,6 @@ const tools = {
 };
 $('#navMine').onclick = tools.mine; $('#navSet').onclick = tools.settings;
 T.init({ mine: tools.mine, settings: tools.settings, keys: tools.keys, replay: tools.replay, sound: tools.sound });
-$('#navTape').onclick = () => scrollTo(0);
 addEventListener('keydown', e => {
   if (e.key === 'Escape') { $('#modal').hidden = true; return; }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); T.palette(); return; }

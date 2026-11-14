@@ -19,7 +19,7 @@ let BASE = {};
 
 // ---------------------------------------------------------------- the shared modal (wide when a panel needs room), with a hook for when it closes
 let closeHook = null;
-const H = { mids: null, perps: null };
+const H = { mids: null, perps: null, tape: null };
 on('mids', v => H.mids && H.mids(v)); on('perps', v => H.perps && H.perps(v));
 export function panel(title, body, bind, wide = false) {
   if (closeHook) { const f = closeHook; closeHook = null; try { f(); } catch {} }
@@ -287,6 +287,146 @@ export function alerts() {
   }, true);
 }
 
+// ---------------------------------------------------------------- liquidation watch: the board's top traders, sorted by how close the market is to their liquidation price
+const LQ = { at: 0, rows: [], side: 'all', busy: false };
+const markOf = c => api.mids[c] || (api.perps.by[c] || {}).mark || null;
+async function liqLoad(force) {
+  const d = api.board.data; if (!d || LQ.busy || (!force && Date.now() - LQ.at < 60000 && LQ.rows.length)) return;
+  LQ.busy = true;
+  const who = [...d.windows.m.chads.slice(0, 25).map((i, k) => ({ r: d.rows[i], rk: { k: 'chads', i: k + 1 } })), ...d.windows.m.virgins.slice(0, 25).map((i, k) => ({ r: d.rows[i], rk: { k: 'virgins', i: k + 1 } }))];
+  const out = []; let n = 0;
+  await Promise.all(Array.from({ length: 6 }, async () => {
+    while (n < who.length) {
+      const w = who[n++], st = await api.account(w.r.a).catch(() => null); if (!st) continue;
+      for (const ap of st.assetPositions || []) { const p = ap.position || {}, szi = +p.szi, liq = p.liquidationPx ? +p.liquidationPx : null; if (!szi || !liq) continue; out.push({ a: w.r.a, n: nameOf(w.r), rk: w.rk, coin: p.coin, szi, val: Math.abs(+p.positionValue || 0), lev: p.leverage ? +p.leverage.value : null, liq }); }
+    }
+  }));
+  LQ.rows = out; LQ.at = Date.now(); LQ.busy = false;
+}
+const away = (coin, liq) => { const m = markOf(coin); return m ? Math.abs(m - liq) / m : null; };
+const awayTxt = d => (d * 100).toFixed(d < .1 ? 2 : 1) + '%';
+export function liqs() {
+  const draw = b => {
+    const T = $('#lqT', b); if (!T) return;
+    if (!LQ.rows.length) { T.innerHTML = `<p class="empty mono">${LQ.busy || !LQ.at ? 'Reading the books of the top 25 chads and virgins…' : 'None of them holds a position with a liquidation price right now.'}</p>`; return; }
+    const L = LQ.rows.filter(x => LQ.side === 'all' || x.rk.k === LQ.side).map(x => ({ ...x, d: away(x.coin, x.liq) })).filter(x => x.d != null).sort((a, b) => a.d - b.d).slice(0, 40);
+    T.innerHTML = `<div class="lq-h"><span>Trader</span><span>Position</span><span class="r">Size</span><span class="r">Mark</span><span class="r">Liquidation</span><span class="r">Away</span></div>` + L.map(x => `<button type="button" class="lq-r${x.d < .05 ? ' hot' : x.d < .15 ? ' warm' : ''}" data-a="${esc(x.a)}"><span class="lq-who"><b>${esc(x.n)}</b>${rkTag(x.rk)}</span><span>${coinIcon(x.coin, 'ci')}<em class="${x.szi > 0 ? 'up' : 'dn'}">${x.szi > 0 ? 'LONG' : 'SHORT'}</em>${esc(x.coin)}${x.lev ? ` <i>${x.lev}x</i>` : ''}</span><span class="r">${usd(x.val)}</span><span class="r" data-lqm="${esc(x.coin)}">${px(markOf(x.coin))}</span><span class="r">${px(x.liq)}</span><span class="r lq-d" data-liq="${x.liq}" data-coin="${esc(x.coin)}">${awayTxt(x.d)}</span></button>`).join('');
+  };
+  panel('Liquidation watch', `<div class="mk-top"><div class="seg seg-sm" id="lqS">${[['all', 'Everyone'], ['chads', 'Chads'], ['virgins', 'Virgins']].map(([k, l]) => `<button type="button" data-s="${k}" class="${LQ.side === k ? 'on' : ''}">${l}</button>`).join('')}</div><button class="btn btn-sm btn-line" type="button" id="lqR">Refresh</button></div>
+    <div class="lq-t" id="lqT"></div><p class="m-note">Open positions of the month's top 25 chads and top 25 virgins, closest to liquidation first. The distance moves with live prices; the books refresh every minute while this is open.</p>`, b => {
+    b.onclick = e => {
+      const s = e.target.closest('#lqS button'); if (s) { LQ.side = s.dataset.s; $$('#lqS button', b).forEach(x => x.classList.toggle('on', x === s)); return draw(b); }
+      if (e.target.closest('#lqR')) { liqLoad(true).then(() => draw(b)); return draw(b); }
+      const r = e.target.closest('.lq-r'); if (r) pick(r.dataset.a);
+    };
+    let last = 0;
+    H.mids = () => { if (Date.now() - last < 1000) return; last = Date.now(); $$('.lq-d', b).forEach(el => { const d = away(el.dataset.coin, +el.dataset.liq); if (d == null) return; el.textContent = awayTxt(d); el.parentElement.classList.toggle('hot', d < .05); el.parentElement.classList.toggle('warm', d >= .05 && d < .15); }); $$('[data-lqm]', b).forEach(el => { const m = markOf(el.dataset.lqm); if (m) el.textContent = px(m); }); };
+    const iv = setInterval(() => liqLoad(true).then(() => draw(b)), 60000);
+    whenClosed(() => { H.mids = null; clearInterval(iv); });
+    draw(b); liqLoad().then(() => draw(b));
+  }, true);
+}
+
+// ---------------------------------------------------------------- watchlist: your starred traders in one place
+const starTop = () => { const d = api.board.data; if (!d) return; const top = d.windows.m.chads.slice(0, 5).map(i => d.rows[i].a); store.set('chad:stars', [...new Set([...stars(), ...top])].slice(0, 50)); return top; };
+export function watch() {
+  const draw = b => {
+    const st = stars(), box = $('#wlT', b); if (!box) return;
+    box.innerHTML = st.length ? `<div class="wl-h"><span>Trader</span><span class="r">Account</span><span class="r">PnL 24h</span><span class="r">PnL 30d</span><span></span></div>` + st.map(a => {
+      const r = rowOf(a) || { a, n: null, av: null, p: {} }, d1 = (r.p.d || [])[0], m = (r.p.m || [])[0];
+      return `<div class="wl-r"><button type="button" class="wl-who" data-a="${esc(a)}"><b>${esc(nameOf(r))}</b>${rkTag(rankOf(a))}<span class="mono">${short(a)}</span></button><span class="r mono">${r.av != null ? usd(r.av) : '—'}</span><span class="r mono ${cls(d1)}">${signed(d1)}</span><span class="r mono ${cls(m)}">${signed(m)}</span><span class="wl-acts"><button type="button" class="btn btn-sm btn-line" data-cmp="${esc(a)}">Compare</button><button type="button" class="btn btn-sm btn-line" data-shr="${esc(a)}">Card</button><button type="button" class="al-x" data-unstar="${esc(a)}" aria-label="Remove">×</button></span></div>`;
+    }).join('') : `<div class="wl-empty"><p class="mono muted">No starred traders yet. Star one with ☆ next to his name on the desk.</p><button class="btn btn-sm btn-line" type="button" data-top="1">Star the top 5 chads</button></div>`;
+  };
+  panel('Watchlist', `<div class="wl-t" id="wlT"></div><p class="m-note">Your starred traders, kept in this browser. Turn on Alerts to get a ping when one of them trades.</p>`, b => {
+    draw(b);
+    b.onclick = e => {
+      const un = e.target.closest('[data-unstar]'); if (un) { store.set('chad:stars', stars().filter(a => lc(a) !== lc(un.dataset.unstar))); return draw(b); }
+      if (e.target.closest('[data-top]')) { starTop(); return draw(b); }
+      const c = e.target.closest('[data-cmp]'); if (c) { const cur = sel(); return compare(c.dataset.cmp, cur && lc(cur) !== lc(c.dataset.cmp) ? cur : undefined); }
+      const s = e.target.closest('[data-shr]'); if (s) return share(s.dataset.shr);
+      const w = e.target.closest('.wl-who'); if (w) pick(w.dataset.a);
+    };
+  }, true);
+}
+
+// ---------------------------------------------------------------- position sizer: how big, for the risk you pick
+const SZ = { coin: 'BTC', acct: '', risk: '1', entry: '', stop: '', tp: '', auto: true };
+const numIn = v => { const x = parseFloat(String(v).replace(/[^0-9.]/g, '')); return isFinite(x) ? x : NaN; };
+export function sizer() {
+  if (!SZ.acct) { const t = (($('#myEq') || {}).textContent || '').trim(), v = numIn(t) * (/K\b/.test(t) ? 1e3 : /M\b/.test(t) ? 1e6 : 1); if (v > 0) SZ.acct = String(Math.round(v)); }
+  if (SZ.auto) { const m = markOf(SZ.coin); if (m) SZ.entry = String(m); }
+  const coins = [...api.perps.list].sort((a, b) => b.vol - a.vol).slice(0, 60).map(p => p.name); if (!coins.includes(SZ.coin)) coins.unshift(SZ.coin);
+  const out = b => {
+    const A = numIn(SZ.acct), R = numIn(SZ.risk) / 100, E = numIn(SZ.entry), St = numIn(SZ.stop), Tp = numIn(SZ.tp), o = $('#szOut', b); if (!o) return;
+    if (!(A > 0 && R > 0 && E > 0 && St > 0) || E === St) { o.innerHTML = '<p class="mono muted">Fill in your account, the risk, an entry and a stop. A stop under the entry means long, above it means short.</p>'; return; }
+    const p = api.perps.by[SZ.coin], long = St < E, riskUsd = A * R, per = Math.abs(E - St), size = riskUsd / per, ntl = size * E, lev = ntl / A, tpOk = Tp > 0 && (long ? Tp > E : Tp < E);
+    const szTxt = p ? size.toFixed(p.szDec) : size.toPrecision(5), maxLev = p ? p.maxLev : null;
+    o.innerHTML = `<div class="sz-big ${long ? 'up' : 'dn'}">${long ? 'LONG' : 'SHORT'} ${esc(szTxt)} ${esc(SZ.coin)}</div>
+      <div class="sz-kv"><div><span>Notional</span><b>${usd(ntl)}</b></div><div><span>Leverage on your account</span><b>${lev.toFixed(1)}x${maxLev ? ` <em class="muted">max ${maxLev}x</em>` : ''}</b></div><div><span>Stop distance</span><b>${(per / E * 100).toFixed(2)}%</b></div>
+      <div><span>Loss at the stop</span><b class="dn">−${usd(riskUsd)}</b></div><div><span>Reward : risk</span><b>${tpOk ? '1 : ' + (Math.abs(Tp - E) / per).toFixed(2) : '—'}</b></div><div><span>Win at the target</span><b class="up">${tpOk ? '+' + usd(size * Math.abs(Tp - E)) : '—'}</b></div></div>
+      ${maxLev && lev > maxLev ? `<p class="sz-warn">That needs more than ${maxLev}x, the most ${esc(SZ.coin)} allows. Widen the stop or risk less.</p>` : ''}${Tp > 0 && !tpOk ? '<p class="sz-warn">The target is on the wrong side of the entry.</p>' : ''}`;
+  };
+  panel('Position sizer', `<div class="sz-g">
+      <label class="sz-f"><span>Account (USD)</span><input class="inp" data-k="acct" inputmode="decimal" value="${esc(SZ.acct)}" placeholder="10000"></label>
+      <label class="sz-f"><span>Risk per trade (%)</span><input class="inp" data-k="risk" inputmode="decimal" value="${esc(SZ.risk)}"></label>
+      <label class="sz-f"><span>Market</span><select id="szCoin">${coins.map(c => `<option${c === SZ.coin ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></label>
+      <label class="sz-f"><span>Entry</span><span class="sz-e"><input class="inp" data-k="entry" inputmode="decimal" value="${esc(SZ.entry)}"><button class="btn btn-sm btn-line" type="button" id="szMark">Mark</button></span></label>
+      <label class="sz-f"><span>Stop</span><input class="inp" data-k="stop" inputmode="decimal" value="${esc(SZ.stop)}" placeholder="where you are wrong"></label>
+      <label class="sz-f"><span>Target (optional)</span><input class="inp" data-k="tp" inputmode="decimal" value="${esc(SZ.tp)}"></label></div>
+    <div class="sz-out" id="szOut"></div><p class="m-note">Size = the dollars you are willing to lose ÷ the distance to your stop. It ignores fees and slippage. It sizes; it does not trade.</p>`, b => {
+    out(b);
+    b.oninput = e => { const k = e.target.dataset.k; if (!k) return; SZ[k] = e.target.value; if (k === 'entry') SZ.auto = false; out(b); };
+    b.onchange = e => { if (e.target.id !== 'szCoin') return; SZ.coin = e.target.value; SZ.auto = true; const m = markOf(SZ.coin); if (m) { SZ.entry = String(m); $('[data-k=entry]', b).value = SZ.entry; } SZ.stop = ''; SZ.tp = ''; $('[data-k=stop]', b).value = ''; $('[data-k=tp]', b).value = ''; out(b); };
+    b.onclick = e => { if (!e.target.closest('#szMark')) return; const m = markOf(SZ.coin); if (m) { SZ.entry = String(m); SZ.auto = true; $('[data-k=entry]', b).value = SZ.entry; out(b); } };
+  }, true);
+}
+
+// ---------------------------------------------------------------- roll: a random trader from the board
+export function roll(kind = 'chads') {
+  const d = api.board.data; if (!d) return toast('The board is still loading.', 'err', 3000);
+  const L = d.windows.m[kind].slice(0, 100); if (!L.length) return;
+  const k = Math.floor(Math.random() * L.length), r = d.rows[L[k]];
+  pick(r.a); toast(`Rolled ${kind === 'virgins' ? 'virgin' : 'chad'} #${k + 1}: <b>${esc(nameOf(r))}</b>`, '', 3000);
+}
+
+// ---------------------------------------------------------------- focus: just the terminal, full screen
+export function focus() {
+  const h = document.documentElement, on = !h.classList.contains('focus');
+  h.classList.toggle('focus', on); const b = $('#navFocus'); if (b) b.classList.toggle('on', on);
+  if (on) { scrollTo(0); try { if (!document.fullscreenElement && h.requestFullscreen) h.requestFullscreen().catch(() => {}); } catch {} }
+  else if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  setTimeout(() => dispatchEvent(new Event('resize')), 350);
+}
+document.addEventListener('fullscreenchange', () => { const h = document.documentElement; if (!document.fullscreenElement && h.classList.contains('focus')) { h.classList.remove('focus'); const b = $('#navFocus'); if (b) b.classList.remove('on'); setTimeout(() => dispatchEvent(new Event('resize')), 200); } });
+
+// ---------------------------------------------------------------- the live tape, all of it
+const TP = [], TPF = { side: 'all', min: 10000 };
+on('fills', ev => {
+  const rk = rankOf(ev.user); if (!rk) return;
+  const by = {};
+  for (const f of ev.fills) { const k = f.oid + f.dir; const x = by[k] || (by[k] = { coin: f.coin, dir: f.dir, ntl: 0, px: +f.px }); x.ntl += +f.sz * +f.px; }
+  for (const x of Object.values(by)) if (x.ntl >= 10000) TP.unshift({ a: ev.user, n: nameOf(rowOf(ev.user) || { a: ev.user }), rk, ...x, t: Date.now() });
+  TP.length = Math.min(TP.length, 300); if (H.tape) H.tape();
+});
+export function tape() {
+  const draw = b => {
+    const box = $('#tpT', b); if (!box) return;
+    const L = TP.filter(x => (TPF.side === 'all' || x.rk.k === TPF.side) && x.ntl >= TPF.min).slice(0, 150);
+    box.innerHTML = L.length ? L.map(x => `<button type="button" class="tp-r" data-a="${esc(x.a)}"><time>${new Date(x.t).toLocaleTimeString('en-US', { hour12: false })}</time>${rkTag(x.rk)}<b>${esc(x.n)}</b><em class="${/Open Long|Close Short|Buy/.test(x.dir) ? 'up' : 'dn'}">${esc(x.dir)}</em><span>${coinIcon(x.coin, 'ci')}${esc(x.coin)}</span><span class="r">${usd(x.ntl)}</span><span class="r">@ ${px(x.px)}</span></button>`).join('')
+      : `<p class="empty mono">Listening to the board's top chads and virgins. Every order of ${usd(TPF.min)} or more shows up here the moment it fills.</p>`;
+  };
+  panel('Live tape', `<div class="mk-top"><div class="seg seg-sm" id="tpS">${[['all', 'Everyone'], ['chads', 'Chads'], ['virgins', 'Virgins']].map(([k, l]) => `<button type="button" data-s="${k}" class="${TPF.side === k ? 'on' : ''}">${l}</button>`).join('')}</div><div class="seg seg-sm" id="tpM">${[[10000, '$10K+'], [100000, '$100K+'], [1000000, '$1M+']].map(([v, l]) => `<button type="button" data-m="${v}" class="${TPF.min === v ? 'on' : ''}">${l}</button>`).join('')}</div></div>
+    <div class="tp-t" id="tpT"></div><p class="m-note">Fills from Hyperliquid's live feed for the board's top traders, from the moment this tab opened.</p>`, b => {
+    draw(b);
+    b.onclick = e => {
+      const s = e.target.closest('#tpS button'); if (s) { TPF.side = s.dataset.s; $$('#tpS button', b).forEach(x => x.classList.toggle('on', x === s)); return draw(b); }
+      const m = e.target.closest('#tpM button'); if (m) { TPF.min = +m.dataset.m; $$('#tpM button', b).forEach(x => x.classList.toggle('on', x === m)); return draw(b); }
+      const r = e.target.closest('.tp-r'); if (r) pick(r.dataset.a);
+    };
+    H.tape = () => draw(b); whenClosed(() => { H.tape = null; });
+  }, true);
+}
+
 // ---------------------------------------------------------------- the board as a CSV, the trader as a link
 export function exportCsv() {
   const d = api.board.data; if (!d) return toast('The board is still loading.', 'err', 3000);
@@ -309,6 +449,8 @@ const clickTab = k => { const b = $(`#bTabs button[data-b=${k}]`); if (b) b.clic
 const ACTS = () => [
   ['Markets', 'every Hyperliquid perp, live', 'M', () => markets()], ['Compare traders', 'two traders, head to head', 'H', () => compare()],
   ['Share card', 'the trader on the desk, as a picture to post', 'S', () => share()], ['Alerts', 'a ping when a starred trader trades', 'A', alerts],
+  ['Liquidation watch', 'the top traders closest to getting liquidated', 'L', liqs], ['Watchlist', 'your starred traders', 'W', watch], ['Live tape', 'every big fill from the top traders', '', tape],
+  ['Position sizer', 'how big, for the risk you pick', 'Z', sizer], ['Random chad', 'open a random top-100 chad', 'R', () => roll('chads')], ['Random virgin', 'open a random top-100 virgin', '', () => roll('virgins')], ['Focus mode', 'just the terminal, full screen', '', focus],
   ['Tail mode', 'copy the trader on the desk', 'T', () => { window.__chad && window.__chad.mode('tail'); scrollTo(0); }], ['Fade mode', 'bet against him', 'F', () => { window.__chad && window.__chad.mode('fade'); scrollTo(0); }],
   ['Chads board', 'the best PnL on Hyperliquid', 'C', () => clickTab('chads')], ['Virgins board', 'the worst PnL', 'V', () => clickTab('virgins')], ['Whales board', 'the biggest accounts', '', () => clickTab('whales')], ['Starred traders', 'the ones you keep', '', () => clickTab('follow')],
   ['Your account', 'positions, orders, TP/SL, close all', '', () => BASE.mine && BASE.mine()], ['Export the board as CSV', 'the board and window you are looking at', 'E', exportCsv],
@@ -352,11 +494,12 @@ export function init(base) {
   $('#palR').addEventListener('mousemove', e => { const b = e.target.closest('.pal-i'); if (b && +b.dataset.i !== PAL.i) { PAL.i = +b.dataset.i; $$('.pal-i', $('#palR')).forEach(x => x.classList.toggle('on', x === b)); } });
   $('#pal').addEventListener('click', e => { if (e.target.id === 'pal') palClose(); });
   $('#navPal').onclick = palette; $('#navMkt').onclick = () => markets(); $('#navCmp').onclick = () => compare(); $('#navShare').onclick = () => share(); $('#navAlerts').onclick = alerts;
+  $('#navLiq').onclick = liqs; $('#navWatch').onclick = watch; $('#navSize').onclick = sizer; $('#navRoll').onclick = e => roll(e.shiftKey ? 'virgins' : 'chads'); $('#navFocus').onclick = focus; $('#navTape').onclick = tape;
   // the more menu
   const mb = $('#navMore'), mm = $('#moreMenu');
   const mClose = () => { mm.hidden = true; mb.setAttribute('aria-expanded', 'false'); };
   mb.onclick = e => { e.stopPropagation(); mm.hidden = !mm.hidden; mb.setAttribute('aria-expanded', String(!mm.hidden)); };
-  mm.onclick = e => { const b = e.target.closest('button[data-m]'); if (!b) return; mClose(); ({ keys: BASE.keys, csv: exportCsv, link: copyLink, hl: openHl, replay: BASE.replay, sound: BASE.sound, settings: BASE.settings }[b.dataset.m] || (() => {}))(); };
+  mm.onclick = e => { const b = e.target.closest('button[data-m]'); if (!b) return; mClose(); ({ keys: BASE.keys, csv: exportCsv, link: copyLink, hl: openHl, replay: BASE.replay, sound: BASE.sound, settings: BASE.settings, tape, sizer, roll: () => roll('chads'), virgin: () => roll('virgins'), focus }[b.dataset.m] || (() => {}))(); };
   document.addEventListener('click', e => { if (!mm.hidden && !e.target.closest('#moreMenu')) mClose(); });
   addEventListener('keydown', e => { if (e.key === 'Escape') { mClose(); if (!$('#pal').hidden) palClose(); } });
   // toasts from alerts open the trader
@@ -372,4 +515,4 @@ export function init(base) {
   const nav = $('#nav'), prog = () => { const h = document.documentElement.scrollHeight - innerHeight; nav.style.setProperty('--sp', h > 0 ? Math.min(1, scrollY / h).toFixed(4) : 0); };
   addEventListener('scroll', prog, { passive: true }); prog();
 }
-export const keys = { k: palette, m: () => markets(), h: () => compare(), s: () => share(), a: alerts, e: exportCsv };
+export const keys = { k: palette, m: () => markets(), h: () => compare(), s: () => share(), a: alerts, e: exportCsv, l: liqs, w: watch, z: sizer, r: () => roll('chads') };
