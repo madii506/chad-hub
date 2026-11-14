@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en" class="intro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CHAD</title>
+<meta name="description" content="The onchain hub for chads. Tail the best traders on Hyperliquid, fade the worst, from one screen.">
+<meta name="theme-color" content="#05070b">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=2">
+<link rel="icon" type="image/png" sizes="64x64" href="/favicon-64.png?v=2">
+<link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png?v=2">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png?v=2">
+<meta property="og:type" content="website">
+<meta property="og:title" content="CHAD">
+<meta property="og:description" content="The onchain hub for chads. Tail the best traders on Hyperliquid, fade the worst.">
+<meta property="og:image" content="/og.png?v=2">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="CHAD">
+<meta name="twitter:description" content="The onchain hub for chads. Tail the best traders on Hyperliquid, fade the worst.">
+<meta name="twitter:image" content="/og.png?v=2">
+<link rel="preload" href="/geist.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/geistmono.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="modulepreload" href="/intro3d.js?v=1">
+<link rel="stylesheet" href="/app.css?v=1">
+</head>
+<body>
+<div id="intro" aria-hidden="true"><canvas id="introCv"></canvas><button class="snd" id="introSnd" type="button" aria-label="Sound on or off"><svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z"/><path class="w" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/><path class="x" d="M16 9l6 6M22 9l-6 6"/></svg></button></div>
+
+<header id="nav">
+  <a class="brand" href="#top" aria-label="CHAD"><img src="/brand-shades.png?v=2" alt="" width="46" height="16"><b>CHAD</b></a>
+  <nav class="links"><a href="#desk">Desk</a><a href="#vs">Virgin vs Chad</a><a href="#hold">Holdings</a><a href="#how">How</a><a href="#faq">FAQ</a></nav>
+  <div class="nav-r">
+    <button class="srch" id="navPal" type="button" aria-label="Search traders, coins and actions"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4-4"/></svg><span>Search</span><kbd>⌘K</kbd></button>
+    <button class="chip mono" id="navTape" type="button" data-tip="Live trades from the top chads"><i></i><span>live</span><b id="navTapeN">0</b></button>
+    <div class="tools">
+      <button class="nb" id="navMkt" type="button" data-tip="Markets · M" aria-label="Markets"><svg viewBox="0 0 24 24"><path d="M6 3v4M6 15v5M12 5v4M12 17v3M18 4v5M18 15v4"/><rect x="4" y="7" width="4" height="8" rx="1"/><rect x="10" y="9" width="4" height="8" rx="1"/><rect x="16" y="9" width="4" height="6" rx="1"/></svg></button>
+      <button class="nb" id="navCmp" type="button" data-tip="Compare · H" aria-label="Compare two traders"><svg viewBox="0 0 24 24"><path d="M4 8h14l-3.5-3.5M20 16H6l3.5 3.5"/></svg></button>
+      <button class="nb" id="navShare" type="button" data-tip="Share card · S" aria-label="Share card"><svg viewBox="0 0 24 24"><path d="M12 15V4M8 7.5 12 4l4 3.5"/><path d="M5 12.5V18a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5.5"/></svg></button>
+      <button class="nb" id="navAlerts" type="button" data-tip="Alerts · A" aria-label="Alerts"><svg viewBox="0 0 24 24"><path d="M6 16.5V11a6 6 0 1 1 12 0v5.5l1.6 1.8H4.4z"/><path d="M10 20.5a2.1 2.1 0 0 0 4 0"/></svg><b class="nb-n" id="navAlertsN" hidden>0</b></button>
+      <button class="nb" id="navMine" type="button" data-tip="Your account" aria-label="Your account"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><path d="M3.5 10h17M9 10v9"/></svg></button>
+      <button class="nb" id="navSet" type="button" data-tip="Settings" aria-label="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M4.2 7.5l2.1 1.2M17.7 15.3l2.1 1.2M4.2 16.5l2.1-1.2M17.7 8.7l2.1-1.2"/></svg></button>
+      <button class="nb" id="navMore" type="button" data-tip="More" aria-label="More" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 24 24"><circle class="fill" cx="5.5" cy="12" r="1.5"/><circle class="fill" cx="12" cy="12" r="1.5"/><circle class="fill" cx="18.5" cy="12" r="1.5"/></svg></button>
+      <div class="more" id="moreMenu" role="menu" hidden>
+        <button type="button" data-m="keys" role="menuitem"><span>Keyboard shortcuts</span><kbd>?</kbd></button>
+        <button type="button" data-m="csv" role="menuitem"><span>Export the board as CSV</span><kbd>E</kbd></button>
+        <button type="button" data-m="link" role="menuitem"><span>Copy link to this trader</span></button>
+        <button type="button" data-m="hl" role="menuitem"><span>Open him on Hyperliquid</span><kbd>↗</kbd></button>
+        <hr>
+        <button type="button" data-m="replay" role="menuitem"><span>Replay the intro</span></button>
+        <button type="button" data-m="sound" role="menuitem"><span>Sound on or off</span></button>
+      </div>
+    </div>
+    <a class="nav-x" id="navX" href="#" target="_blank" rel="noopener" hidden aria-label="X">𝕏</a>
+    <button class="btn btn-sm btn-gold" id="connectBtn" type="button"><i class="dot"></i><span>Connect</span></button>
+    <button class="menu-btn" id="menuBtn" type="button" aria-label="Menu" aria-expanded="false"><i></i><i></i></button>
+  </div>
+</header>
+<div id="mSheet" hidden><button type="button" data-act="find">Search</button><button type="button" data-act="markets">Markets</button><button type="button" data-act="compare">Compare traders</button><button type="button" data-act="share">Share card</button><button type="button" data-act="alerts">Alerts</button><button type="button" data-act="mine">Your account</button><button type="button" data-act="settings">Settings</button><button type="button" data-act="csv">Export the board as CSV</button><button type="button" data-act="replay">Replay the intro</button><a href="#desk">Desk</a><a href="#vs">Virgin vs Chad</a><a href="#hold">Holdings</a><a href="#how">How</a><a href="#faq">FAQ</a></div>
+
+<main id="top">
+  <section class="desk-sec" id="desk">
+    <div class="wrap">
+      <div class="tape mono" id="tape"><span class="tape-l">LIVE</span><div class="tape-in" id="tapeIn"><span class="tape-empty">Listening to the top chads on Hyperliquid…</span></div></div>
+      <div class="term">
+        <aside class="board">
+          <div class="b-top">
+            <div class="seg b-tabs" id="bTabs"><button type="button" data-b="chads" class="on">Chads</button><button type="button" data-b="virgins">Virgins</button><button type="button" data-b="whales">Whales</button><button type="button" data-b="follow" title="Traders you starred">★</button></div>
+            <div class="b-row2"><div class="seg seg-sm" id="bWin"><button type="button" data-w="d">24h</button><button type="button" data-w="w">7d</button><button type="button" data-w="m" class="on">30d</button><button type="button" data-w="t">All</button></div>
+            <label class="b-q"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4-4"/></svg><input id="bQ" type="text" placeholder="name or 0x…" autocomplete="off" spellcheck="false"></label></div>
+          </div>
+          <div class="b-head mono"><span>#</span><span>Trader</span><span id="bCol">PnL 30d</span></div>
+          <div class="b-rows" id="bRows"><p class="empty mono">Reading Hyperliquid's leaderboard…</p></div>
+          <div class="b-meta mono" id="bMeta"></div>
+        </aside>
+
+        <div class="trader" id="trader">
+          <div class="t-head">
+            <div class="t-id"><span class="t-rank mono" id="tRank">—</span><div><b id="tName">Pick a trader</b><span class="mono" id="tAddr"></span></div></div>
+            <div class="t-acts"><button class="ta" id="tStar" type="button" title="Star this trader">☆</button><button class="ta mono" id="tCopyA" type="button" title="Copy the address">0x</button><a class="ta" id="tOpen" target="_blank" rel="noopener" title="Open on Hyperliquid"><svg viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5H5V6h5"/></svg></a></div>
+          </div>
+          <div class="t-stats" id="tStats"></div>
+          <div class="eq">
+            <div class="eq-h mono"><span id="eqLbl">Account value</span><div class="seg seg-xs" id="eqWin"><button type="button" data-w="day">1D</button><button type="button" data-w="week">1W</button><button type="button" data-w="month" class="on">1M</button><button type="button" data-w="allTime">All</button></div><div class="seg seg-xs" id="eqKind"><button type="button" data-k="av" class="on">Equity</button><button type="button" data-k="pnl">PnL</button></div></div>
+            <div class="eq-c"><canvas id="eqCv"></canvas><div class="eq-tip mono" id="eqTip" hidden></div><div class="eq-empty mono" id="eqEmpty" hidden></div></div>
+          </div>
+          <div class="t-tabs"><div class="seg seg-sm" id="tTab"><button type="button" data-t="pos" class="on">Positions <em id="tPosN"></em></button><button type="button" data-t="fills">Trades</button><button type="button" data-t="orders">Orders <em id="tOrdN"></em></button></div><span class="mono t-live" id="tLive"></span></div>
+          <div class="t-body" id="tBody"><p class="empty mono">Pick a chad on the left to see what he holds right now.</p></div>
+        </div>
+
+        <aside class="copy">
+          <div class="seg c-mode" id="cMode"><button type="button" data-m="tail" class="on"><b>Tail</b><span>copy him</span></button><button type="button" data-m="fade"><b>Fade</b><span>bet against him</span></button></div>
+          <div class="c-sec">
+            <div class="slide"><div class="slide-h mono"><span>Size vs his account</span><b id="cPctV">100%</b></div><input id="cPct" type="range" min="5" max="300" step="5" value="100"></div>
+            <div class="c-two"><label class="fld"><span>Max per position (USD)</span><input id="cMax" type="text" inputmode="decimal" value="1000"></label><label class="fld"><span>Leverage cap</span><input id="cLev" type="text" inputmode="decimal" value="5"></label></div>
+          </div>
+          <div class="c-prev" id="cPrev"><p class="empty mono">Pick a trader to preview the orders.</p></div>
+          <button class="btn btn-gold c-go" id="cGo" type="button">Connect for Hyperliquid</button>
+          <label class="c-follow"><input type="checkbox" id="cFollow"><span class="tog"></span><span><b>Follow mode</b><em>keeps your copy in sync every <i id="cEvery">15</i>s while this tab is open</em></span></label>
+          <div class="c-log mono" id="cLog"></div>
+        </aside>
+      </div>
+
+      <div class="mine" id="mine">
+        <div class="mine-c"><div class="mine-h mono"><span>Your Hyperliquid account</span><em id="myEq">—</em></div>
+          <div class="mine-acts"><button type="button" id="closeAll">Close all</button><button type="button" id="cancelAll">Cancel all orders</button><button type="button" id="refreshMe">Refresh</button></div>
+          <div class="mine-rows" id="myRows"><p class="empty mono">Connect an EVM wallet to see your positions.</p></div></div>
+        <div class="mine-c"><div class="mine-h mono"><span>Open orders</span><em id="myOoN"></em></div><div class="mine-rows" id="myOo"><p class="empty mono">No open orders.</p></div>
+          <div class="mine-h mono" style="margin-top:14px"><span>Your recent fills</span></div><div class="mine-rows" id="myFills"><p class="empty mono">—</p></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="vs">
+    <div class="wrap">
+      <p class="eyebrow mono">01 — Virgin vs Chad</p>
+      <h2>Same exchange. Same month. <em>Different men.</em></h2>
+      <p class="lede" id="vsLede">The best and the worst trader on Hyperliquid over the last 30 days, live from its public leaderboard.</p>
+      <div class="vs" id="vsCards"><div class="vs-card skel"></div><div class="vs-card skel"></div></div>
+    </div>
+  </section>
+
+  <section class="band band-dim" id="hold">
+    <div class="wrap">
+      <p class="eyebrow mono">02 — Holdings</p>
+      <h2>What the chads hold. <em>What the virgins hold.</em></h2>
+      <p class="lede">Open positions of the month's top 25 and bottom 25 traders right now, by coin. Long count, short count, net size.</p>
+      <div class="hold">
+        <div class="hold-c"><div class="hold-h"><b>The chads</b><span class="mono">top 25 · 30d</span></div><div class="hold-rows" id="holdC"><p class="empty mono">Reading positions…</p></div></div>
+        <div class="hold-c"><div class="hold-h"><b>The virgins</b><span class="mono">bottom 25 · 30d</span></div><div class="hold-rows" id="holdV"><p class="empty mono">Reading positions…</p></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="how">
+    <div class="wrap">
+      <p class="eyebrow mono">03 — How it works</p>
+      <h2>Four steps. <em>No account with us.</em></h2>
+      <div class="steps">
+        <div class="step"><span class="mono">1</span><h3>Connect</h3><p>Any EVM wallet with USDC on Hyperliquid. Phantom, MetaMask and Rabby all work.</p></div>
+        <div class="step"><span class="mono">2</span><h3>Approve once</h3><p>One signature approves a CHAD session key on Hyperliquid. It can trade for you and can never withdraw.</p></div>
+        <div class="step"><span class="mono">3</span><h3>Pick a man</h3><p>A chad to tail, or a virgin to fade. Every number on the board is Hyperliquid's own.</p></div>
+        <div class="step"><span class="mono">4</span><h3>Copy or invert</h3><p>His positions, scaled to your account, in one click. Follow mode keeps them in sync while the tab is open.</p></div>
+      </div>
+      <div class="rails mono"><span>Built on</span><a href="https://hyperliquid.xyz" target="_blank" rel="noopener"><img src="https://www.google.com/s2/favicons?domain=hyperliquid.xyz&sz=64" alt="">Hyperliquid</a><a href="https://phantom.com" target="_blank" rel="noopener"><img src="https://www.google.com/s2/favicons?domain=phantom.com&sz=64" alt="">Phantom</a><a href="https://metamask.io" target="_blank" rel="noopener"><img src="https://www.google.com/s2/favicons?domain=metamask.io&sz=64" alt="">MetaMask</a><a href="https://rabby.io" target="_blank" rel="noopener"><img src="https://www.google.com/s2/favicons?domain=rabby.io&sz=64" alt="">Rabby</a></div>
+    </div>
+  </section>
+
+  <section class="band band-dim" id="faq">
+    <div class="wrap faq-w">
+      <div><p class="eyebrow mono">04 — FAQ</p><h2>Questions <em>chads ask.</em></h2></div>
+      <div class="faq" id="faqList">
+        <details><summary>What is CHAD?</summary><p>A copy terminal for Hyperliquid. It reads the exchange's public leaderboard of about 48,000 traders, shows you what any of them holds right now, and copies their positions into your account, or the exact opposite.</p></details>
+        <details><summary>Does CHAD hold my money?</summary><p>No. Your USDC stays in your own Hyperliquid account. There is no CHAD account and no deposit to us. Orders go from your browser straight to Hyperliquid.</p></details>
+        <details><summary>What is the session key?</summary><p>Hyperliquid lets you approve an "agent" key that can place and cancel orders for your account but can never withdraw. CHAD creates one in your browser, your wallet approves it once, and it stays in this browser only.</p></details>
+        <details><summary>What does Tail do, exactly?</summary><p>It opens the same positions he has, scaled by your account size against his, then by the size slider. Max per position and the leverage cap keep it inside your limits. Anything under Hyperliquid's $10 minimum is skipped.</p></details>
+        <details><summary>And Fade?</summary><p>The same sizes, the other side. When the worst trader of the month is long, you are short.</p></details>
+        <details><summary>How does follow mode work?</summary><p>Every few seconds it reads his positions again and moves yours to match: opens what he opens, cuts what he cuts, closes what he closes. It runs in this tab, so it stops when you close it. Positions you already had in other coins are never touched.</p></details>
+        <details><summary>What does it cost?</summary><p>Hyperliquid's trading fees, the same as on its own site. CHAD adds nothing.</p></details>
+        <details><summary>What can go wrong?</summary><p>A chad can have a bad month. Copies fill at your price, not his, a moment later. Leverage can be liquidated. Size it like a chad, not like a virgin.</p></details>
+      </div>
+    </div>
+  </section>
+
+  <section class="band end" id="end">
+    <div class="wrap end-w">
+      <img class="end-pfp" src="/chad-pfp.webp?v=2" alt="CHAD" width="420" height="420" loading="lazy">
+      <p class="end-k mono">the onchain hub for <b>chads</b>.<i></i></p>
+      <h2>Tail the chads. <em>Fade the virgins.</em></h2>
+      <div class="ca" id="caBox" hidden><span class="mono" id="caTxt"></span><button class="btn btn-sm btn-line" id="caCopy" type="button">Copy</button><a class="btn btn-sm btn-line" id="caBuy" target="_blank" rel="noopener">pump.fun</a><a class="btn btn-sm btn-line" id="caChart" target="_blank" rel="noopener">Chart</a></div>
+      <a class="btn btn-gold" href="#desk">Open the desk</a>
+    </div>
+  </section>
+</main>
+
+<div class="pal" id="pal" hidden><div class="pal-in" role="dialog" aria-modal="true" aria-label="Search"><div class="pal-q"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4-4"/></svg><input id="palQ" placeholder="Search traders, coins, actions…" autocomplete="off" spellcheck="false"><kbd>esc</kbd></div><div class="pal-r" id="palR"></div><div class="pal-f mono"><span><kbd>↑</kbd><kbd>↓</kbd>move</span><span><kbd>↵</kbd>open</span><span>paste any 0x address</span></div></div></div>
+<div class="modal" id="modal" hidden>
+  <div class="modal-in" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+    <div class="modal-h"><b id="mTitle">Connect</b><button class="x" id="mClose" type="button" aria-label="Close">×</button></div>
+    <div class="modal-b" id="mBody"></div>
+  </div>
+</div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<script type="module" src="/main.js?v=1"></script>
+</body>
+</html>
