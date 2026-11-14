@@ -528,7 +528,7 @@ async function fundLoad(force) {
   const d = await api.predictedFundings();
   FA.rows = (d || []).map(([coin, vs]) => {
     const o = { coin };
-    for (const [v, x] of vs || []) { const k = VEN[v]; if (k && x && x.fundingRate != null) { const h = +x.fundingIntervalHours || (k === 'hl' ? 1 : 8); o[k] = +x.fundingRate * (24 / h) * 365 * 100; o[k + 'N'] = +x.nextFundingTime; } }
+    for (const [v, x] of vs || []) { const k = VEN[v]; if (k && x && x.fundingRate != null) { const h = +x.fundingIntervalHours || (k === 'hl' ? 1 : 8); o[k] = +x.fundingRate * (24 / h) * 365 * 100; let nt = +x.nextFundingTime || 0; while (nt && nt <= Date.now()) nt += h * 3600e3; o[k + 'N'] = nt; o[k + 'H'] = h; } }
     if (o.hl != null) { const others = ['bin', 'byb'].filter(k => o[k] != null); if (others.length) { const far = others.reduce((a, k) => (Math.abs(o.hl - o[k]) > Math.abs(o.hl - o[a]) ? k : a), others[0]); o.gap = o.hl - o[far]; o.vs = far; } }
     return o;
   }).filter(o => o.hl != null);
@@ -554,7 +554,7 @@ export function funding() {
       const s1 = e.target.closest('#faS button'); if (s1) { FA.sort = s1.dataset.v; $$('#faS button', b).forEach(x => x.classList.toggle('on', x === s1)); return draw(b); }
       if (e.target.closest('#faR')) load(true);
     };
-    const iv = setInterval(() => { $$('[data-next]', b).forEach(el => { const t = +el.dataset.next; if (t) el.textContent = until(t); }); if (Date.now() - FA.at > 60000) load(true); }, 1000);
+    const iv = setInterval(() => { $$('[data-next]', b).forEach(el => { let t = +el.dataset.next; if (!t) return; while (t <= Date.now()) t += 3600e3; el.dataset.next = t; el.textContent = until(t); }); if (Date.now() - FA.at > 60000) load(true); }, 1000);
     whenClosed(() => clearInterval(iv));
   }, true);
 }
